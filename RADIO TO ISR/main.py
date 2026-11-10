@@ -1,16 +1,614 @@
-# This is a sample Python script.
+from flask import Flask, render_template_string, send_from_directory
+import os
 
-# Press Shift+F10 to execute it or replace it with your code.
-# Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
+app = Flask(__name__)
 
+# Complete HTML code for Radio Pulse Quantum Nexus Apex
+HTML_TEMPLATE = """<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Radio Pulse: Quantum Nexus Apex</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        cyber: { bg: '#060810', dark: '#0b1120', cyan: '#00f3ff', pink: '#ff0055', purple: '#8b5cf6' }
+                    }
+                }
+            }
+        }
+    </script>
 
-def print_hi(name):
-    # Use a breakpoint in the code line below to debug your script.
-    print(f'Hi, {name}')  # Press Ctrl+F8 to toggle the breakpoint.
+    <!-- FontAwesome & Google Fonts -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    
+    <!-- Three.js & OrbitControls -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #060810; color: #f8fafc; overflow: hidden; }
+        .font-cyber { font-family: 'Orbitron', sans-serif; }
+        
+        .glass-panel {
+            background: rgba(11, 17, 32, 0.85);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(0, 243, 255, 0.15);
+            box-shadow: 0 0 25px rgba(0, 0, 0, 0.5);
+        }
 
-# Press the green button in the gutter to run the script.
+        .neon-glow {
+            text-shadow: 0 0 10px rgba(0, 243, 255, 0.6);
+        }
+
+        .custom-scrollbar::-webkit-scrollbar { width: 5px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(0,243,255,0.3); border-radius: 4px; }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col">
+
+    <!-- Top HUD Navigation -->
+    <header class="h-16 px-6 glass-panel border-b border-cyan-500/20 flex items-center justify-between z-50">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-purple-600 flex items-center justify-center shadow-lg shadow-cyan-500/30">
+                <i class="fa-solid fa-satellite-dish text-white text-lg animate-pulse"></i>
+            </div>
+            <div>
+                <h1 class="font-cyber font-bold text-lg tracking-wider text-cyan-400 neon-glow">QUANTUM NEXUS</h1>
+                <p class="text-xs text-slate-400">Apex Global Radio Stream Matrix</p>
+            </div>
+        </div>
+
+        <!-- Center Equalizer / Audio FX Controls -->
+        <div class="hidden md:flex items-center gap-3">
+            <button onclick="openModal('eq-modal')" class="px-3 py-1.5 rounded-lg bg-slate-800/85 hover:bg-cyan-500/20 border border-cyan-500/30 text-xs font-cyber text-cyan-300 transition">
+                <i class="fa-solid fa-sliders mr-1.5"></i> 10-Band EQ
+            </button>
+            <button onclick="openModal('dsp-modal')" class="px-3 py-1.5 rounded-lg bg-slate-800/85 hover:bg-purple-500/20 border border-purple-500/30 text-xs font-cyber text-purple-300 transition">
+                <i class="fa-solid fa-wand-magic-sparkles mr-1.5"></i> Audio FX & Reverb
+            </button>
+            <button onclick="openModal('ambient-modal')" class="px-3 py-1.5 rounded-lg bg-slate-800/85 hover:bg-pink-500/20 border border-pink-500/30 text-xs font-cyber text-pink-300 transition">
+                <i class="fa-solid fa-cloud-rain mr-1.5"></i> Cyber Ambience
+            </button>
+        </div>
+
+        <!-- Telemetry & Status -->
+        <div class="flex items-center gap-4">
+            <div class="hidden sm:flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900/80 border border-slate-700 text-xs">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                <span class="text-emerald-400 font-mono" id="telemetry-ping">NODE SYNC: 14ms</span>
+            </div>
+            <button onclick="teleportRandom()" class="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-purple-600 font-cyber font-bold text-xs text-white shadow-lg shadow-cyan-500/20 hover:scale-105 transition">
+                <i class="fa-solid fa-dice mr-1"></i> Teleport Random
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Application Split Workspace -->
+    <div class="flex-1 flex flex-col lg:flex-row relative overflow-hidden">
+        
+        <!-- Left Sidebar: Station Explorer -->
+        <aside class="w-full lg:w-96 glass-panel flex flex-col z-40 border-r border-cyan-500/10">
+            <!-- Search & Filter Header -->
+            <div class="p-4 border-b border-slate-800">
+                <div class="relative mb-3">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-3.5 text-slate-400 text-sm"></i>
+                    <input type="text" id="station-search" oninput="handleSearch(this.value)" placeholder="Search global station, city, or genre..." class="w-full bg-slate-900/90 border border-slate-700 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-cyan-400 transition">
+                </div>
+
+                <!-- Genre & Country Tags -->
+                <div class="flex gap-1.5 overflow-x-auto pb-1 custom-scrollbar text-xs">
+                    <button onclick="filterByGenre('all', this)" class="genre-chip px-3 py-1 rounded-full bg-cyan-500 text-slate-950 font-semibold whitespace-nowrap transition">All</button>
+                    <button onclick="filterByGenre('electronic', this)" class="genre-chip px-3 py-1 rounded-full bg-slate-800 text-slate-300 hover:bg-slate-700 whitespace-nowrap transition">Electronic</button>
+                    <button onclick="filterByGenre('rock', this)" class="genre-chip px-3 py-1 rounded-full bg-slate-800 text-slate-300 hover:bg-slate-700 whitespace-nowrap transition">Rock</button>
+                    <button onclick="filterByGenre('jazz', this)" class="genre-chip px-3 py-1 rounded-full bg-slate-800 text-slate-300 hover:bg-slate-700 whitespace-nowrap transition">Jazz</button>
+                    <button onclick="filterByGenre('classical', this)" class="genre-chip px-3 py-1 rounded-full bg-slate-800 text-slate-300 hover:bg-slate-700 whitespace-nowrap transition">Classical</button>
+                    <button onclick="filterByGenre('ambient', this)" class="genre-chip px-3 py-1 rounded-full bg-slate-800 text-slate-300 hover:bg-slate-700 whitespace-nowrap transition">Ambient</button>
+                </div>
+            </div>
+
+            <!-- Stations List Feed -->
+            <div id="stations-container" class="flex-1 overflow-y-auto p-4 space-y-2.5 custom-scrollbar">
+                <div class="text-center py-12 text-slate-400">
+                    <i class="fa-solid fa-spinner animate-spin text-2xl text-cyan-400 mb-2"></i>
+                    <p class="text-xs">Scanning quantum wave frequencies...</p>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Right Workspace: 3D WebGL Globe & Canvas -->
+        <main class="flex-1 relative bg-slate-950 flex flex-col">
+            <div id="webgl-container" class="absolute inset-0 z-10"></div>
+            
+            <!-- Floating Globe Target Reticle -->
+            <div class="absolute inset-0 pointer-events-none flex items-center justify-center z-20">
+                <div class="w-32 h-32 rounded-full border border-cyan-500/20 animate-ping absolute"></div>
+                <div class="w-16 h-16 rounded-full border border-cyan-400/40 flex items-center justify-center">
+                    <div class="w-1 h-1 bg-cyan-400 rounded-full shadow-[0_0_10px_#00f3ff]"></div>
+                </div>
+            </div>
+
+            <!-- Visualizer Spectrum Overlay Canvas -->
+            <div class="absolute bottom-28 left-6 right-6 h-20 glass-panel rounded-2xl z-30 hidden sm:flex items-center px-6 gap-4 pointer-events-none">
+                <div class="font-cyber text-xs text-cyan-400 font-bold tracking-wider">SPECTRUM FX</div>
+                <div class="flex-1 h-12 flex items-end gap-1" id="visualizer-bars">
+                    <!-- Dynamic Bars populated via JS -->
+                </div>
+                <div class="text-right">
+                    <div class="text-xs font-mono text-purple-400" id="stream-codec-badge">CODEC: AAC-LC 128kbps</div>
+                    <div class="text-[10px] text-slate-400">REALTIME FFT ANALYZER</div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Bottom Master Audio Player HUD Bar -->
+    <footer class="h-24 glass-panel border-t border-cyan-500/20 px-6 flex items-center justify-between z-50">
+        <div class="flex items-center gap-4 w-72">
+            <div class="w-12 h-12 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 text-xl">
+                <i class="fa-solid fa-radio animate-pulse"></i>
+            </div>
+            <div class="overflow-hidden">
+                <h4 id="active-station-title" class="font-bold text-sm truncate text-slate-100">Select a Station</h4>
+                <p id="active-station-location" class="text-xs text-slate-400 truncate">Quantum Stream Matrix Idle</p>
+            </div>
+        </div>
+
+        <!-- Master Play / Pause Controls -->
+        <div class="flex items-center gap-6">
+            <button onclick="toggleMasterPlay()" id="master-play-btn" class="w-14 h-14 rounded-full bg-gradient-to-r from-cyan-500 to-purple-600 flex items-center justify-center text-white text-xl shadow-lg shadow-cyan-500/30 hover:scale-105 transition">
+                <i class="fa-solid fa-play ml-0.5" id="master-play-icon"></i>
+            </button>
+        </div>
+
+        <!-- Volume & Settings -->
+        <div class="flex items-center gap-4 w-60 justify-end">
+            <i class="fa-solid fa-volume-high text-slate-400 text-sm"></i>
+            <input type="range" min="0" max="1" step="0.05" value="1" oninput="setMasterVolume(this.value)" class="w-28 accent-cyan-400 cursor-pointer">
+            <audio id="audio-element" crossorigin="anonymous"></audio>
+        </div>
+    </footer>
+
+    <!-- 10-Band EQ Modal -->
+    <div id="eq-modal" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 hidden flex items-center justify-center p-4">
+        <div class="glass-panel w-full max-w-2xl rounded-2xl p-6 relative">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="font-cyber font-bold text-cyan-400 text-base"><i class="fa-solid fa-sliders mr-2"></i>10-BAND GRAPHIC EQUALIZER</h3>
+                <button onclick="closeModal('eq-modal')" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <div class="grid grid-cols-10 gap-2 h-48 items-end" id="eq-sliders-grid"></div>
+        </div>
+    </div>
+
+    <!-- DSP Audio FX Modal -->
+    <div id="dsp-modal" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 hidden flex items-center justify-center p-4">
+        <div class="glass-panel w-full max-w-md rounded-2xl p-6 relative">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="font-cyber font-bold text-purple-400 text-base"><i class="fa-solid fa-wand-magic-sparkles mr-2"></i>DSP REVERB & SPEED</h3>
+                <button onclick="closeModal('dsp-modal')" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <div class="space-y-4">
+                <div>
+                    <label class="text-xs text-slate-300 block mb-1">Playback Speed / Pitch: <span id="speed-val" class="text-cyan-400">1.0x</span></label>
+                    <input type="range" min="0.5" max="1.5" step="0.05" value="1.0" oninput="setSpeed(this.value)" class="w-full accent-purple-400">
+                </div>
+                <div>
+                    <label class="text-xs text-slate-300 block mb-1">Cyber Space Reverb Mix: <span id="reverb-val" class="text-purple-400">0%</span></label>
+                    <input type="range" min="0" max="1" step="0.05" value="0" oninput="setReverb(this.value)" class="w-full accent-purple-400">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Ambient Sound Generator Modal -->
+    <div id="ambient-modal" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 hidden flex items-center justify-center p-4">
+        <div class="glass-panel w-full max-w-md rounded-2xl p-6 relative">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="font-cyber font-bold text-pink-400 text-base"><i class="fa-solid fa-cloud-rain mr-2"></i>CYBER AMBIENCE MIXER</h3>
+                <button onclick="closeModal('ambient-modal')" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <div class="space-y-4">
+                <div>
+                    <label class="text-xs text-slate-300 block mb-1">Cyber Rain Ambience</label>
+                    <input type="range" min="0" max="1" step="0.05" value="0" oninput="setAmbientVolume('rain', this.value)" class="w-full accent-pink-400">
+                </div>
+                <div>
+                    <label class="text-xs text-slate-300 block mb-1">City Synth Drones</label>
+                    <input type="range" min="0" max="1" step="0.05" value="0" oninput="setAmbientVolume('city', this.value)" class="w-full accent-pink-400">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript Application Logic -->
+    <script>
+        let stationsList = [];
+        let activeStation = null;
+        let audioElement = document.getElementById('audio-element');
+        let isPlaying = false;
+
+        let scene, camera, renderer, globeMesh, atmosphereMesh, satelliteSwarm, stationMarkersGroup;
+        const GLOBE_RADIUS = 5;
+
+        let audioCtx, audioSource, analyser, eqFilters = [], delayNode, delayGain;
+        const FREQUENCIES = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+
+        let ambientAudioCtx, ambientNodes = {};
+
+        window.addEventListener('DOMContentLoaded', () => {
+            initThreeGlobe();
+            initVisualizerBars();
+            buildEQSliders();
+            fetchGlobalStations();
+        });
+
+        function initThreeGlobe() {
+            const container = document.getElementById('webgl-container');
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
+            camera.position.set(0, 0, 15);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            container.appendChild(renderer.domElement);
+
+            const controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.minDistance = 8;
+            controls.maxDistance = 25;
+
+            scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+            const pointLight = new THREE.PointLight(0x00f3ff, 2, 50);
+            pointLight.position.set(10, 10, 10);
+            scene.add(pointLight);
+
+            const globeGeo = new THREE.SphereGeometry(GLOBE_RADIUS, 64, 64);
+            const globeMat = new THREE.MeshStandardMaterial({
+                color: 0x0b1120,
+                roughness: 0.7,
+                metalness: 0.3,
+                wireframe: false
+            });
+            globeMesh = new THREE.Mesh(globeGeo, globeMat);
+            scene.add(globeMesh);
+
+            atmosphereMesh = new THREE.Mesh(
+                new THREE.SphereGeometry(GLOBE_RADIUS * 1.08, 32, 32),
+                new THREE.MeshBasicMaterial({ color: 0x00f3ff, wireframe: true, transparent: true, opacity: 0.08 })
+            );
+            scene.add(atmosphereMesh);
+
+            const swarmGeo = new THREE.BufferGeometry();
+            const count = 300;
+            const positions = new Float32Array(count * 3);
+            for(let i = 0; i < count * 3; i += 3) {
+                const u = Math.random();
+                const theta = u * 2.0 * Math.PI;
+                const phi = Math.acos(2.0 * Math.random() - 1.0);
+                const r = GLOBE_RADIUS * (1.2 + Math.random() * 0.4);
+                positions[i] = r * Math.sin(phi) * Math.cos(theta);
+                positions[i+1] = r * Math.sin(phi) * Math.sin(theta);
+                positions[i+2] = r * Math.cos(phi);
+            }
+            swarmGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            satelliteSwarm = new THREE.Points(swarmGeo, new THREE.PointsMaterial({ color: 0x8b5cf6, size: 0.08 }));
+            scene.add(satelliteSwarm);
+
+            stationMarkersGroup = new THREE.Group();
+            scene.add(stationMarkersGroup);
+
+            window.addEventListener('resize', onWindowResize);
+            animateGlobe();
+        }
+
+        function animateGlobe() {
+            requestAnimationFrame(animateGlobe);
+            globeMesh.rotation.y += 0.001;
+            atmosphereMesh.rotation.y -= 0.0005;
+            satelliteSwarm.rotation.y += 0.002;
+            stationMarkersGroup.rotation.y += 0.001;
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            const container = document.getElementById('webgl-container');
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+
+        async function fetchGlobalStations() {
+            const mirrors = [
+                'https://de1.api.radio-browser.info/json/stations/topclick/50',
+                'https://nl1.api.radio-browser.info/json/stations/topclick/50',
+                'https://at1.api.radio-browser.info/json/stations/topclick/50'
+            ];
+
+            let data = null;
+            for (let url of mirrors) {
+                try {
+                    const res = await fetch(url);
+                    if (res.ok) {
+                        data = await res.json();
+                        break;
+                    }
+                } catch(e) {}
+            }
+
+            const container = document.getElementById('stations-container');
+            container.innerHTML = '';
+
+            if (!data || data.length === 0) {
+                container.innerHTML = `<p class="text-center text-xs text-rose-400 py-6">Failed to connect to Quantum broadcast mirrors.</p>`;
+                return;
+            }
+
+            stationsList = data;
+            renderStations(stationsList);
+            populateGlobeMarkers(stationsList);
+        }
+
+        function renderStations(stations) {
+            const container = document.getElementById('stations-container');
+            container.innerHTML = '';
+
+            stations.forEach((station) => {
+                if (!station.url_resolved) return;
+                const card = document.createElement('div');
+                card.className = "p-3 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-cyan-500/50 cursor-pointer transition flex items-center justify-between group";
+                card.innerHTML = `
+                    <div class="overflow-hidden pr-2">
+                        <h5 class="font-bold text-xs text-slate-200 truncate group-hover:text-cyan-400 transition">${station.name}</h5>
+                        <p class="text-[10px] text-slate-400 truncate">${station.country || 'Global Stream'} • ${station.codec || 'MP3'}</p>
+                    </div>
+                    <div class="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-cyan-400 group-hover:bg-cyan-500 group-hover:text-slate-950 transition">
+                        <i class="fa-solid fa-play text-xs"></i>
+                    </div>
+                `;
+                card.onclick = () => selectAndPlayStation(station);
+                container.appendChild(card);
+            });
+        }
+
+        function populateGlobeMarkers(stations) {
+            while(stationMarkersGroup.children.length > 0) {
+                stationMarkersGroup.remove(stationMarkersGroup.children[0]);
+            }
+
+            stations.forEach(station => {
+                if (!station.geo_lat || !station.geo_long) return;
+                const phi = (90 - station.geo_lat) * (Math.PI / 180);
+                const theta = (station.geo_long + 180) * (Math.PI / 180);
+                const x = -(GLOBE_RADIUS * Math.sin(phi) * Math.cos(theta));
+                const z = GLOBE_RADIUS * Math.sin(phi) * Math.sin(theta);
+                const y = GLOBE_RADIUS * Math.cos(phi);
+
+                const markerGeo = new THREE.SphereGeometry(0.08, 16, 16);
+                const markerMat = new THREE.MeshBasicMaterial({ color: 0x00f3ff });
+                const marker = new THREE.Mesh(markerGeo, markerMat);
+                marker.position.set(x, y, z);
+                marker.userData = station;
+                stationMarkersGroup.add(marker);
+            });
+        }
+
+        function selectAndPlayStation(station) {
+            activeStation = station;
+            document.getElementById('active-station-title').innerText = station.name;
+            document.getElementById('active-station-location').innerText = `Live from ${station.country || 'Global Matrix'}`;
+            
+            audioElement.src = station.url_resolved;
+            audioElement.play().then(() => {
+                isPlaying = true;
+                document.getElementById('master-play-icon').className = "fa-solid fa-pause";
+                initWebAudioAPI();
+            }).catch(err => {
+                audioElement.src = `https://api.allorigins.win/raw?url=${encodeURIComponent(station.url_resolved)}`;
+                audioElement.play().then(() => {
+                    isPlaying = true;
+                    document.getElementById('master-play-icon').className = "fa-solid fa-pause";
+                    initWebAudioAPI();
+                }).catch(e => alert("Stream transmission offline or unsupported codec."));
+            });
+        }
+
+        function toggleMasterPlay() {
+            if (!audioElement.src && stationsList.length > 0) {
+                selectAndPlayStation(stationsList[0]);
+                return;
+            }
+            if (isPlaying) {
+                audioElement.pause();
+                isPlaying = false;
+                document.getElementById('master-play-icon').className = "fa-solid fa-play ml-0.5";
+            } else {
+                audioElement.play();
+                isPlaying = true;
+                document.getElementById('master-play-icon').className = "fa-solid fa-pause";
+            }
+        }
+
+        function setMasterVolume(val) {
+            audioElement.volume = parseFloat(val);
+        }
+
+        function initWebAudioAPI() {
+            if (audioCtx) return;
+            try {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioCtx.createAnalyser();
+                analyser.fftSize = 64;
+
+                delayNode = audioCtx.createDelay();
+                delayNode.delayTime.value = 0.3;
+                delayGain = audioCtx.createGain();
+                delayGain.gain.value = 0;
+
+                audioSource = audioCtx.createMediaElementSource(audioElement);
+
+                let lastNode = audioSource;
+                eqFilters = FREQUENCIES.map(freq => {
+                    const filter = audioCtx.createBiquadFilter();
+                    filter.type = (freq <= 64) ? 'lowshelf' : (freq >= 8000) ? 'highshelf' : 'peaking';
+                    filter.frequency.value = freq;
+                    filter.gain.value = 0;
+                    lastNode.connect(filter);
+                    lastNode = filter;
+                    return filter;
+                });
+
+                lastNode.connect(delayNode);
+                delayNode.connect(delayGain);
+                delayGain.connect(lastNode);
+
+                lastNode.connect(analyser);
+                analyser.connect(audioCtx.destination);
+                startVisualizerLoop();
+            } catch(e) {
+                console.error("Web Audio API Error:", e);
+            }
+        }
+
+        function initVisualizerBars() {
+            const container = document.getElementById('visualizer-bars');
+            container.innerHTML = '';
+            for(let i=0; i<32; i++) {
+                const bar = document.createElement('div');
+                bar.className = "flex-1 bg-gradient-to-t from-cyan-500 to-purple-500 rounded-t transition-all duration-75";
+                bar.style.height = '10%';
+                container.appendChild(bar);
+            }
+        }
+
+        function startVisualizerLoop() {
+            const container = document.getElementById('visualizer-bars');
+            const bars = container.children;
+            const dataArray = new Uint8Array(32);
+
+            function renderFrame() {
+                requestAnimationFrame(renderFrame);
+                if (!analyser || isPlaying === false) return;
+                analyser.getByteFrequencyData(dataArray);
+                for(let i=0; i<bars.length; i++) {
+                    const heightPercent = Math.max(10, (dataArray[i] / 255) * 100);
+                    bars[i].style.height = heightPercent + '%';
+                }
+            }
+            renderFrame();
+        }
+
+        function buildEQSliders() {
+            const grid = document.getElementById('eq-sliders-grid');
+            grid.innerHTML = '';
+            FREQUENCIES.forEach((freq, idx) => {
+                const col = document.createElement('div');
+                col.className = "flex flex-col items-center h-full justify-between";
+                col.innerHTML = `
+                    <span class="text-[9px] text-slate-400 font-mono">${freq >= 1000 ? (freq/1000)+'k' : freq}</span>
+                    <input type="range" min="-15" max="15" step="1" value="0" oninput="setEQGain(${idx}, this.value)" class="h-32 accent-cyan-400 cursor-pointer">
+                    <span class="text-[9px] text-cyan-400 font-mono">0dB</span>
+                `;
+                grid.appendChild(col);
+            });
+        }
+
+        function setEQGain(index, val) {
+            if (eqFilters[index]) eqFilters[index].gain.value = parseFloat(val);
+        }
+
+        function setSpeed(val) {
+            audioElement.playbackRate = parseFloat(val);
+            document.getElementById('speed-val').innerText = parseFloat(val).toFixed(2) + 'x';
+        }
+
+        function setReverb(val) {
+            if (delayGain) delayGain.gain.value = parseFloat(val) * 0.4;
+            document.getElementById('reverb-val').innerText = Math.round(val * 100) + '%';
+        }
+
+        function setAmbientVolume(type, val) {
+            if (!ambientAudioCtx) {
+                ambientAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            const volume = parseFloat(val);
+            if (volume > 0 && !ambientNodes[type]) {
+                const bufferSize = ambientAudioCtx.sampleRate * 2;
+                const buffer = ambientAudioCtx.createBuffer(1, bufferSize, ambientAudioCtx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = (type === 'rain') ? Math.random() * 2 - 1 : (Math.random() * 2 - 1) * 0.2;
+                }
+                const noise = ambientAudioCtx.createBufferSource();
+                noise.buffer = buffer;
+                noise.loop = true;
+
+                const filter = ambientAudioCtx.createBiquadFilter();
+                filter.type = type === 'rain' ? 'bandpass' : 'lowpass';
+                filter.frequency.value = type === 'rain' ? 1000 : 150;
+
+                const gainNode = ambientAudioCtx.createGain();
+                gainNode.gain.value = volume;
+
+                noise.connect(filter);
+                filter.connect(gainNode);
+                gainNode.connect(ambientAudioCtx.destination);
+                noise.start();
+
+                ambientNodes[type] = { source: noise, gain: gainNode };
+            } else if (ambientNodes[type]) {
+                ambientNodes[type].gain.gain.value = volume;
+            }
+        }
+
+        function teleportRandom() {
+            if (stationsList.length === 0) return;
+            const randomStation = stationsList[Math.floor(Math.random() * stationsList.length)];
+            selectAndPlayStation(randomStation);
+            if(randomStation.geo_lat && randomStation.geo_long) {
+                camera.position.set(0, 0, 14);
+            }
+        }
+
+        function handleSearch(query) {
+            const filtered = stationsList.filter(s => s.name.toLowerCase().includes(query.toLowerCase()) || (s.country && s.country.toLowerCase().includes(query.toLowerCase())));
+            renderStations(filtered);
+        }
+
+        function filterByGenre(genre, btn) {
+            document.querySelectorAll('.genre-chip').forEach(c => {
+                c.className = "genre-chip px-3 py-1 rounded-full bg-slate-800 text-slate-300 hover:bg-slate-700 whitespace-nowrap transition";
+            });
+            btn.className = "genre-chip px-3 py-1 rounded-full bg-cyan-500 text-slate-950 font-semibold whitespace-nowrap transition";
+            
+            if (genre === 'all') {
+                renderStations(stationsList);
+            } else {
+                const filtered = stationsList.filter(s => s.tags && s.tags.toLowerCase().includes(genre));
+                renderStations(filtered.length > 0 ? filtered : stationsList);
+            }
+        }
+
+        function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+        function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+    </script>
+</body>
+</html>
+"""
+
+@app.route('/')
+def index():
+    return render_template_string(HTML_TEMPLATE)
+
 if __name__ == '__main__':
-    print_hi('PyCharm')
-
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/
+    app.run(host='0.0.0.0', port=5000, debug=True)
