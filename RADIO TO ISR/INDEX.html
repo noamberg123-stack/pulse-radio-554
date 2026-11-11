@@ -312,629 +312,656 @@
             controls.enableDamping = true;
             controls.dampingFactor = 0.05;
             controls.minDistance = 8;
-            controls.maxDistance = 25;
-        function toggleViewMode() {
-            is2DView = !is2DView;
-            const webglContainer = document.getElementById('webgl-container');
-            const mapContainer = document.getElementById('map-container');
-            const toggleBtn = document.getElementById('view-toggle-btn');
+        controls.maxDistance = 25;
 
-            if (is2DView) {
-                webglContainer.classList.add('hidden');
-                mapContainer.classList.remove('hidden');
-                toggleBtn.innerHTML = '<i class="fa-solid fa-globe mr-1.5"></i> Switch to 3D Globe';
-                if (!leafletMap) initLeafletMap();
-            } else {
-                mapContainer.classList.add('hidden');
-                webglContainer.classList.remove('hidden');
-                toggleBtn.innerHTML = '<i class="fa-solid fa-map mr-1.5"></i> Switch to 2D Map';
+        // Globe sphere geometry
+        const globeGeo = new THREE.SphereGeometry(GLOBE_RADIUS, 64, 64);
+        const globeMat = new THREE.MeshBasicMaterial({
+            color: 0x0b1120,
+            wireframe: true,
+            transparent: true,
+            opacity: 0.4
+        });
+        globeMesh = new THREE.Mesh(globeGeo, globeMat);
+        scene.add(globeMesh);
+
+        // Atmosphere glow geometry
+        const atmosGeo = new THREE.SphereGeometry(GLOBE_RADIUS * 1.15, 64, 64);
+        const atmosMat = new THREE.MeshBasicMaterial({
+            color: 0x00f3ff,
+            transparent: true,
+            opacity: 0.08,
+            side: THREE.BackSide
+        });
+        atmosphereMesh = new THREE.Mesh(atmosGeo, atmosMat);
+        scene.add(atmosphereMesh);
+
+        // Satellites particle swarm
+        const swarmGeo = new THREE.BufferGeometry();
+        const positions = new Float32Array(300 * 3);
+        for(let i = 0; i < 300 * 3; i += 3) {
+            const r = GLOBE_RADIUS * 1.3 + Math.random() * 2;
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.acos((Math.random() * 2) - 1);
+            positions[i] = r * Math.sin(phi) * Math.cos(theta);
+            positions[i+1] = r * Math.sin(phi) * Math.sin(theta);
+            positions[i+2] = r * Math.cos(phi);
+        }
+        swarmGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        satelliteSwarm = new THREE.Points(swarmGeo, new THREE.PointsMaterial({ color: 0x8b5cf6, size: 0.08 }));
+        scene.add(satelliteSwarm);
+
+        stationMarkersGroup = new THREE.Group();
+        scene.add(stationMarkersGroup);
+
+        raycaster = new THREE.Raycaster();
+        mouse = new THREE.Vector2();
+
+        renderer.domElement.addEventListener('click', onGlobeClick, false);
+        window.addEventListener('resize', onWindowResize);
+        animateGlobe();
+    }
+
+    function toggleViewMode() {
+        is2DView = !is2DView;
+        const webglContainer = document.getElementById('webgl-container');
+        const mapContainer = document.getElementById('map-container');
+        const toggleBtn = document.getElementById('view-toggle-btn');
+
+        if (is2DView) {
+            webglContainer.classList.add('hidden');
+            mapContainer.classList.remove('hidden');
+            toggleBtn.innerHTML = '<i class="fa-solid fa-globe mr-1.5"></i> Switch to 3D Globe';
+            if (!leafletMap) initLeafletMap();
+        } else {
+            mapContainer.classList.add('hidden');
+            webglContainer.classList.remove('hidden');
+            toggleBtn.innerHTML = '<i class="fa-solid fa-map mr-1.5"></i> Switch to 2D Map';
+        }
+    }
+
+    function initLeafletMap() {
+        leafletMap = L.map('map-container', { zoomControl: false }).setView([20, 0], 2);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OpenStreetMap &copy; CARTO',
+            maxZoom: 19
+        }).addTo(leafletMap);
+        updateMapMarkers();
+    }
+
+    function updateMapMarkers() {
+        if (!leafletMap) return;
+        mapMarkers.forEach(m => leafletMap.removeLayer(m));
+        mapMarkers = [];
+
+        stationsList.forEach(s => {
+            if (s.geo_lat && s.geo_long) {
+                const marker = L.circleMarker([s.geo_lat, s.geo_long], {
+                    radius: 5,
+                    color: '#00f3ff',
+                    fillColor: '#8b5cf6',
+                    fillOpacity: 0.8
+                }).addTo(leafletMap);
+
+                marker.bindTooltip(s.name, { permanent: false, direction: 'top' });
+                marker.on('click', () => selectAndPlayStation(s));
+                mapMarkers.push(marker);
             }
+        });
+    }
+
+    // Camera Smooth Fly To Coords
+    function flyToCoordinates(lat, lng) {
+        if (!camera || !controls) return;
+        const phi = (90 - lat) * (Math.PI / 180);
+        const theta = (lng + 180) * (Math.PI / 180);
+        const targetPos = new THREE.Vector3(
+            -(GLOBE_RADIUS * 2.8 * Math.sin(phi) * Math.cos(theta)),
+            GLOBE_RADIUS * 2.8 * Math.cos(phi),
+            GLOBE_RADIUS * 2.8 * Math.sin(phi) * Math.sin(theta)
+        );
+        
+        // Smooth Camera Interpolation
+        const startPos = camera.position.clone();
+        let progress = 0;
+        const animateCamera = () => {
+            progress += 0.04;
+            camera.position.lerpVectors(startPos, targetPos, progress);
+            controls.update();
+            if (progress < 1) requestAnimationFrame(animateCamera);
+        };
+        animateCamera();
+    }
+
+    function onGlobeClick(event) {
+        const rect = renderer.domElement.getBoundingClientRect();
+        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(mouse, camera);
+
+        const intersects = raycaster.intersectObjects(stationMarkersGroup.children);
+        if (intersects.length > 0) {
+            const clickedStation = intersects[0].object.userData;
+            if (clickedStation) selectAndPlayStation(clickedStation);
         }
+    }
 
-        function initLeafletMap() {
-            leafletMap = L.map('map-container', { zoomControl: false }).setView([20, 0], 2);
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-                attribution: '&copy; OpenStreetMap &copy; CARTO',
-                maxZoom: 19
-            }).addTo(leafletMap);
-            updateMapMarkers();
-        }
+    function drawLaserArc(lat, lng) {
+        if (activeArcMesh) scene.remove(activeArcMesh);
 
-        function updateMapMarkers() {
-            if (!leafletMap) return;
-            mapMarkers.forEach(m => leafletMap.removeLayer(m));
-            mapMarkers = [];
+        const phi = (90 - lat) * (Math.PI / 180);
+        const theta = (lng + 180) * (Math.PI / 180);
+        const endVec = new THREE.Vector3(
+            -(GLOBE_RADIUS * Math.sin(phi) * Math.cos(theta)),
+            GLOBE_RADIUS * Math.cos(phi),
+            GLOBE_RADIUS * Math.sin(phi) * Math.sin(theta)
+        );
+        const startVec = new THREE.Vector3(0, GLOBE_RADIUS, 0);
 
-            stationsList.forEach(s => {
-                if (s.geo_lat && s.geo_long) {
-                    const marker = L.circleMarker([s.geo_lat, s.geo_long], {
-                        radius: 5,
-                        color: '#00f3ff',
-                        fillColor: '#8b5cf6',
-                        fillOpacity: 0.8
-                    }).addTo(leafletMap);
+        const midVec = startVec.clone().add(endVec).multiplyScalar(0.7);
+        midVec.setLength(GLOBE_RADIUS * 1.5);
 
-                    marker.bindTooltip(s.name, { permanent: false, direction: 'top' });
-                    marker.on('click', () => selectAndPlayStation(s));
-                    mapMarkers.push(marker);
+        const curve = new THREE.QuadraticBezierCurve3(startVec, midVec, endVec);
+        const points = curve.getPoints(50);
+        const curveGeo = new THREE.BufferGeometry().setFromPoints(points);
+        const curveMat = new THREE.LineBasicMaterial({ color: 0x00f3ff, linewidth: 3 });
+        
+        activeArcMesh = new THREE.Line(curveGeo, curveMat);
+        scene.add(activeArcMesh);
+    }
+
+    function animateGlobe() {
+        requestAnimationFrame(animateGlobe);
+        if (globeMesh) globeMesh.rotation.y += 0.001;
+        if (atmosphereMesh) atmosphereMesh.rotation.y -= 0.0005;
+        if (satelliteSwarm) satelliteSwarm.rotation.y += 0.002;
+        if (stationMarkersGroup) stationMarkersGroup.rotation.y += 0.001;
+        if (controls) controls.update();
+        if (renderer && scene && camera) renderer.render(scene, camera);
+    }
+
+    function onWindowResize() {
+        const container = document.getElementById('webgl-container');
+        if (!container || !camera || !renderer) return;
+        camera.aspect = container.clientWidth / container.clientHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(container.clientWidth, container.clientHeight);
+    }
+
+    // 2. Fetch Radio Stations from Radio-Browser API with Multi-Mirror Failover
+    async function fetchGlobalStations() {
+        try {
+            // Try backend Flask API first
+            const res = await fetch('/api/stations');
+            if (res.ok) {
+                const data = await res.json();
+                if (Array.isArray(data) && data.length > 0) {
+                    stationsList = data;
+                    renderStations(stationsList);
+                    populateGlobeMarkers(stationsList);
+                    return;
                 }
-            });
-        }
-
-        // Camera Smooth Fly To Coords
-        function flyToCoordinates(lat, lng) {
-            if (!camera || !controls) return;
-            const phi = (90 - lat) * (Math.PI / 180);
-            const theta = (lng + 180) * (Math.PI / 180);
-            const targetPos = new THREE.Vector3(
-                -(GLOBE_RADIUS * 2.8 * Math.sin(phi) * Math.cos(theta)),
-                GLOBE_RADIUS * 2.8 * Math.cos(phi),
-                GLOBE_RADIUS * 2.8 * Math.sin(phi) * Math.sin(theta)
-            );
-            
-            // Smooth Camera Interpolation
-            const startPos = camera.position.clone();
-            let progress = 0;
-            const animateCamera = () => {
-                progress += 0.04;
-                camera.position.lerpVectors(startPos, targetPos, progress);
-                controls.update();
-                if (progress < 1) requestAnimationFrame(animateCamera);
-            };
-            animateCamera();
-        }
-
-        // 3. Audio Engine & Stream Playback
-        function selectAndPlayStation(station) {
-            activeStation = station;
-            document.getElementById('active-station-title').innerText = station.name;
-            document.getElementById('active-station-location').innerText = `Live from ${station.country || 'Global Matrix'}`;
-            
-            if (station.geo_lat && station.geo_long) {
-                drawLaserArc(station.geo_lat, station.geo_long);
-                flyToCoordinates(station.geo_lat, station.geo_long);
-                if (leafletMap && is2DView) leafletMap.flyTo([station.geo_lat, station.geo_long], 5);
             }
-            swarmGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-            satelliteSwarm = new THREE.Points(swarmGeo, new THREE.PointsMaterial({ color: 0x8b5cf6, size: 0.08 }));
-            scene.add(satelliteSwarm);
+        } catch(e) {}
 
-            stationMarkersGroup = new THREE.Group();
-            scene.add(stationMarkersGroup);
+        // Fallback mirrors
+        const mirrors = [
+            'https://de1.api.radio-browser.info/json/stations/topclick/50',
+            'https://nl1.api.radio-browser.info/json/stations/topclick/50'
+        ];
 
-            window.addEventListener('resize', onWindowResize);
-            animateGlobe();
-        }
-
-        function onGlobeClick(event) {
-            const rect = renderer.domElement.getBoundingClientRect();
-            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-            raycaster.setFromCamera(mouse, camera);
-
-            const intersects = raycaster.intersectObjects(stationMarkersGroup.children);
-            if (intersects.length > 0) {
-                const clickedStation = intersects[0].object.userData;
-                if (clickedStation) selectAndPlayStation(clickedStation);
-            }
-        }
-
-        function drawLaserArc(lat, lng) {
-            if (activeArcMesh) scene.remove(activeArcMesh);
-
-            const phi = (90 - lat) * (Math.PI / 180);
-            const theta = (lng + 180) * (Math.PI / 180);
-            const endVec = new THREE.Vector3(
-                -(GLOBE_RADIUS * Math.sin(phi) * Math.cos(theta)),
-                GLOBE_RADIUS * Math.cos(phi),
-                GLOBE_RADIUS * Math.sin(phi) * Math.sin(theta)
-            );
-            const startVec = new THREE.Vector3(0, GLOBE_RADIUS, 0);
-
-            const midVec = startVec.clone().add(endVec).multiplyScalar(0.7);
-            midVec.setLength(GLOBE_RADIUS * 1.5);
-
-            const curve = new THREE.QuadraticBezierCurve3(startVec, midVec, endVec);
-            const points = curve.getPoints(50);
-            const curveGeo = new THREE.BufferGeometry().setFromPoints(points);
-            const curveMat = new THREE.LineBasicMaterial({ color: 0x00f3ff, linewidth: 3 });
-            
-            activeArcMesh = new THREE.Line(curveGeo, curveMat);
-            scene.add(activeArcMesh);
-        }
-
-        function animateGlobe() {
-            requestAnimationFrame(animateGlobe);
-            globeMesh.rotation.y += 0.001;
-            atmosphereMesh.rotation.y -= 0.0005;
-            satelliteSwarm.rotation.y += 0.002;
-            stationMarkersGroup.rotation.y += 0.001;
-            renderer.render(scene, camera);
-        }
-
-        function onWindowResize() {
-            const container = document.getElementById('webgl-container');
-            camera.aspect = container.clientWidth / container.clientHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(container.clientWidth, container.clientHeight);
-        }
-
-        // 2. Fetch Radio Stations from Radio-Browser API with Multi-Mirror Failover
-        async function fetchGlobalStations() {
+        let data = null;
+        for (let url of mirrors) {
             try {
-                // Try backend Flask API first
-                const res = await fetch('/api/stations');
+                const res = await fetch(url);
                 if (res.ok) {
-                    const data = await res.json();
-                    if (Array.isArray(data) && data.length > 0) {
-                        stationsList = data;
-                        renderStations(stationsList);
-                        populateGlobeMarkers(stationsList);
-                        return;
-                    }
+                    data = await res.json();
+                    break;
                 }
             } catch(e) {}
-
-            // Fallback mirrors
-            const mirrors = [
-                'https://de1.api.radio-browser.info/json/stations/topclick/50',
-                'https://nl1.api.radio-browser.info/json/stations/topclick/50'
-            ];
-
-            let data = null;
-            for (let url of mirrors) {
-                try {
-                    const res = await fetch(url);
-                    if (res.ok) {
-                        data = await res.json();
-                        break;
-                    }
-                } catch(e) {}
-            }
-
-            const container = document.getElementById('stations-container');
-            container.innerHTML = '';
-
-            if (!data || data.length === 0) {
-                container.innerHTML = `<p class="text-center text-xs text-rose-400 py-6">Failed to connect to Quantum broadcast mirrors.</p>`;
-                return;
-            }
-
-            stationsList = data;
-            renderStations(stationsList);
-            populateGlobeMarkers(stationsList);
         }
 
-        async function submitCustomStream(e) {
-            e.preventDefault();
-            const name = document.getElementById('custom-name').value;
-            const url = document.getElementById('custom-url').value;
-            const lat = document.getElementById('custom-lat').value;
-            const long_val = document.getElementById('custom-long').value;
+        const container = document.getElementById('stations-container');
+        container.innerHTML = '';
 
-            try {
-                const res = await fetch('/api/stations/add', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, url, lat, long: long_val, country: 'User Custom Node' })
-                });
-                const data = await res.json();
-                if (data.success) {
-                    closeModal('custom-stream-modal');
-                    fetchGlobalStations();
-                    selectAndPlayStation(data.station);
-                } else {
-                    alert(data.error || "Failed to add custom stream.");
-                }
-            } catch(err) {
-                alert("Error connecting to custom stream endpoint.");
-            }
+        if (!data || data.length === 0) {
+            container.innerHTML = `<p class="text-center text-xs text-rose-400 py-6">Failed to connect to Quantum broadcast mirrors.</p>`;
+            return;
         }
 
-        function setSleepTimer(mins) {
-            clearInterval(sleepTimerInterval);
-            const countdownEl = document.getElementById('sleep-countdown');
-            if (mins === 'off') {
+        stationsList = data;
+        renderStations(stationsList);
+        populateGlobeMarkers(stationsList);
+    }
+
+    async function submitCustomStream(e) {
+        e.preventDefault();
+        const name = document.getElementById('custom-name').value;
+        const url = document.getElementById('custom-url').value;
+        const lat = document.getElementById('custom-lat').value;
+        const long_val = document.getElementById('custom-long').value;
+
+        try {
+            const res = await fetch('/api/stations/add', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, url, lat, long: long_val, country: 'User Custom Node' })
+            });
+            const data = await res.json();
+            if (data.success) {
+                closeModal('custom-stream-modal');
+                fetchGlobalStations();
+                selectAndPlayStation(data.station);
+            } else {
+                alert(data.error || "Failed to add custom stream.");
+            }
+        } catch(err) {
+            alert("Error connecting to custom stream endpoint.");
+        }
+    }
+
+    function setSleepTimer(mins) {
+        clearInterval(sleepTimerInterval);
+        const countdownEl = document.getElementById('sleep-countdown');
+        if (mins === 'off') {
+            countdownEl.classList.add('hidden');
+            return;
+        }
+
+        sleepTimeLeft = parseInt(mins) * 60;
+        countdownEl.classList.remove('hidden');
+
+        sleepTimerInterval = setInterval(() => {
+            sleepTimeLeft--;
+            const m = Math.floor(sleepTimeLeft / 60);
+            const s = sleepTimeLeft % 60;
+            countdownEl.innerText = `${m}:${s < 10 ? '0' : ''}${s}`;
+
+            if (sleepTimeLeft <= 10 && audioElement.volume > 0.05) {
+                audioElement.volume = Math.max(0, audioElement.volume - 0.08);
+            }
+
+            if (sleepTimeLeft <= 0) {
+                clearInterval(sleepTimerInterval);
+                if (isPlaying) toggleMasterPlay();
+                document.getElementById('sleep-timer-select').value = 'off';
                 countdownEl.classList.add('hidden');
-                return;
             }
+        }, 1000);
+    }
 
-            sleepTimeLeft = parseInt(mins) * 60;
-            countdownEl.classList.remove('hidden');
-
-            sleepTimerInterval = setInterval(() => {
-                sleepTimeLeft--;
-                const m = Math.floor(sleepTimeLeft / 60);
-                const s = sleepTimeLeft % 60;
-                countdownEl.innerText = `${m}:${s < 10 ? '0' : ''}${s}`;
-
-                if (sleepTimeLeft <= 10 && audioElement.volume > 0.05) {
-                    audioElement.volume = Math.max(0, audioElement.volume - 0.08);
-                }
-
-                if (sleepTimeLeft <= 0) {
-                    clearInterval(sleepTimerInterval);
-                    if (isPlaying) toggleMasterPlay();
-                    document.getElementById('sleep-timer-select').value = 'off';
-                    countdownEl.classList.add('hidden');
-                }
-            }, 1000);
+    // 3. Audio Engine & Stream Playback
+    function selectAndPlayStation(station) {
+        activeStation = station;
+        document.getElementById('active-station-title').innerText = station.name;
+        document.getElementById('active-station-location').innerText = `Live from ${station.country || 'Global Matrix'}`;
+        
+        if (station.geo_lat && station.geo_long) {
+            drawLaserArc(station.geo_lat, station.geo_long);
+            flyToCoordinates(station.geo_lat, station.geo_long);
+            if (leafletMap && is2DView) leafletMap.flyTo([station.geo_lat, station.geo_long], 5);
         }
 
-        // 3. Audio Engine & Stream Playback
-        function selectAndPlayStation(station) {
-            activeStation = station;
-            document.getElementById('active-station-title').innerText = station.name;
-            document.getElementById('active-station-location').innerText = `Live from ${station.country || 'Global Matrix'}`;
-            
-            if (station.geo_lat && station.geo_long) {
-                drawLaserArc(station.geo_lat, station.geo_long);
-            }
+        // Fetch live metadata telemetry
+        fetch(`/api/stream_info?url=${encodeURIComponent(station.url_resolved)}`)
+            .then(res => res.json())
+            .then(info => {
+                if (info.bitrate) {
+                    document.getElementById('stream-codec-badge').innerText = `CODEC: ${station.codec || 'AAC'} ${info.bitrate}kbps`;
+                }
+                if (info.server) {
+                    document.getElementById('stream-server-badge').innerText = `SERVER: ${info.server.substring(0, 20)}`;
+                }
+            }).catch(() => {});
 
-            // Fetch live metadata telemetry
-            fetch(`/api/stream_info?url=${encodeURIComponent(station.url_resolved)}`)
-                .then(res => res.json())
-                .then(info => {
-                    if (info.bitrate) {
-                        document.getElementById('stream-codec-badge').innerText = `CODEC: ${station.codec || 'AAC'} ${info.bitrate}kbps`;
-                    }
-                    if (info.server) {
-                        document.getElementById('stream-server-badge').innerText = `SERVER: ${info.server.substring(0, 20)}`;
-                    }
-                }).catch(() => {});
-
-            audioElement.src = station.url_resolved;
+        audioElement.src = station.url_resolved;
+        audioElement.play().then(() => {
+            isPlaying = true;
+            document.getElementById('master-play-icon').className = "fa-solid fa-pause";
+            initWebAudioAPI();
+        }).catch(err => {
+            audioElement.src = `/api/proxy?url=${encodeURIComponent(station.url_resolved)}`;
             audioElement.play().then(() => {
                 isPlaying = true;
                 document.getElementById('master-play-icon').className = "fa-solid fa-pause";
                 initWebAudioAPI();
-            }).catch(err => {
-                audioElement.src = `/api/proxy?url=${encodeURIComponent(station.url_resolved)}`;
-                audioElement.play().then(() => {
-                    isPlaying = true;
-                    document.getElementById('master-play-icon').className = "fa-solid fa-pause";
-                    initWebAudioAPI();
-                }).catch(e => alert("Stream transmission offline or unsupported codec."));
+            }).catch(e => console.log("Stream playback error:", e));
+        });
+    }
+
+    function toggleMasterPlay() {
+        if (!audioElement.src && stationsList.length > 0) {
+            selectAndPlayStation(stationsList[0]);
+            return;
+        }
+        if (isPlaying) {
+            audioElement.pause();
+            isPlaying = false;
+            document.getElementById('master-play-icon').className = "fa-solid fa-play ml-0.5";
+        } else {
+            audioElement.play();
+            isPlaying = true;
+            document.getElementById('master-play-icon').className = "fa-solid fa-pause";
+        }
+    }
+
+    function setMasterVolume(val) {
+        audioElement.volume = parseFloat(val);
+    }
+
+    function initWebAudioAPI() {
+        if (audioCtx) return;
+        try {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 64;
+
+            delayNode = audioCtx.createDelay();
+            delayNode.delayTime.value = 0.3;
+            delayGain = audioCtx.createGain();
+            delayGain.gain.value = 0;
+
+            if (audioCtx.createStereoPanner) {
+                stereoPanner = audioCtx.createStereoPanner();
+            }
+
+            audioSource = audioCtx.createMediaElementSource(audioElement);
+
+            let lastNode = audioSource;
+            eqFilters = FREQUENCIES.map(freq => {
+                const filter = audioCtx.createBiquadFilter();
+                filter.type = (freq <= 64) ? 'lowshelf' : (freq >= 8000) ? 'highshelf' : 'peaking';
+                filter.frequency.value = freq;
+                filter.gain.value = 0;
+                lastNode.connect(filter);
+                lastNode = filter;
+                return filter;
             });
-        }
 
-        function toggleMasterPlay() {
-            if (!audioElement.src && stationsList.length > 0) {
-                selectAndPlayStation(stationsList[0]);
-                return;
+            if (stereoPanner) {
+                lastNode.connect(stereoPanner);
+                lastNode = stereoPanner;
             }
-            if (isPlaying) {
-                audioElement.pause();
-                isPlaying = false;
-                document.getElementById('master-play-icon').className = "fa-solid fa-play ml-0.5";
-            } else {
-                audioElement.play();
-                isPlaying = true;
-                document.getElementById('master-play-icon').className = "fa-solid fa-pause";
-            }
+
+            lastNode.connect(delayNode);
+            delayNode.connect(delayGain);
+            delayGain.connect(lastNode);
+
+            lastNode.connect(analyser);
+            analyser.connect(audioCtx.destination);
+            startVisualizerLoop();
+        } catch(e) {
+            console.error("Web Audio API Initialization Error:", e);
+        }
+    }
+
+    // Stereo Spatial Panner Control
+    function setStereoPan(val) {
+        const panVal = parseFloat(val);
+        if (stereoPanner && stereoPanner.pan) {
+            stereoPanner.pan.value = panVal;
+        }
+    }
+
+    // Apply Preset EQ Profiles
+    function applyEQPreset(presetKey) {
+        const gains = EQ_PRESETS[presetKey] || EQ_PRESETS.flat;
+        gains.forEach((gain, idx) => {
+            setEQGain(idx, gain);
+            const slider = document.querySelectorAll('#eq-sliders-grid input')[idx];
+            if (slider) slider.value = gain;
+        });
+    }
+
+    // Live Audio Stream Recorder
+    function toggleStreamRecording() {
+        const recordBtn = document.getElementById('record-btn');
+        const recordIcon = document.getElementById('record-icon');
+        
+        if (!isPlaying || !audioCtx) {
+            alert("Please select and play a live stream first.");
+            return;
         }
 
-        function setMasterVolume(val) {
-            audioElement.volume = parseFloat(val);
-        }
-
-        function initWebAudioAPI() {
-            if (audioCtx) return;
+        if (!isRecording) {
             try {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                analyser = audioCtx.createAnalyser();
-                analyser.fftSize = 64;
+                const dest = audioCtx.createMediaStreamDestination();
+                analyser.connect(dest);
+                mediaRecorder = new MediaRecorder(dest.stream);
+                recordedChunks = [];
 
-                delayNode = audioCtx.createDelay();
-                delayNode.delayTime.value = 0.3;
-                delayGain = audioCtx.createGain();
-                delayGain.gain.value = 0;
+                mediaRecorder.ondataavailable = (e) => {
+                    if (e.data.size > 0) recordedChunks.push(e.data);
+                };
 
-                if (audioCtx.createStereoPanner) {
-                    stereoPanner = audioCtx.createStereoPanner();
-                }
+                mediaRecorder.onstop = () => {
+                    const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `${(activeStation ? activeStation.name : 'Quantum_Stream').replace(/[^a-z0-9]/gi, '_')}_record.webm`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                };
 
-                audioSource = audioCtx.createMediaElementSource(audioElement);
+                mediaRecorder.start();
+                isRecording = true;
+                recordBtn.classList.add('bg-rose-500/30', 'border-rose-500');
+                recordIcon.className = "fa-solid fa-stop mr-1.5 text-rose-500 animate-pulse";
+            } catch(err) {
+                alert("Stream recording not supported on this stream source.");
+            }
+        } else {
+            mediaRecorder.stop();
+            isRecording = false;
+            recordBtn.classList.remove('bg-rose-500/30', 'border-rose-500');
+            recordIcon.className = "fa-solid fa-circle mr-1.5 text-rose-500";
+        }
+    }
 
-                let lastNode = audioSource;
-                eqFilters = FREQUENCIES.map(freq => {
-                    const filter = audioCtx.createBiquadFilter();
-                    filter.type = (freq <= 64) ? 'lowshelf' : (freq >= 8000) ? 'highshelf' : 'peaking';
-                    filter.frequency.value = freq;
-                    filter.gain.value = 0;
-                    lastNode.connect(filter);
-                    lastNode = filter;
-                    return filter;
-                });
+    // 4. Visualizer Bars & UI Modals
+    function initVisualizerBars() {
+        const container = document.getElementById('visualizer-bars');
+        if (!container) return;
+        container.innerHTML = '';
+        for(let i=0; i<32; i++) {
+            const bar = document.createElement('div');
+            bar.className = "flex-1 bg-gradient-to-t from-cyan-500 to-purple-500 rounded-t transition-all duration-75";
+            bar.style.height = '10%';
+            container.appendChild(bar);
+        }
+    }
 
-                if (stereoPanner) {
-                    lastNode.connect(stereoPanner);
-                    lastNode = stereoPanner;
-                }
+    function startVisualizerLoop() {
+        const container = document.getElementById('visualizer-bars');
+        if (!container) return;
+        const bars = container.children;
+        const dataArray = new Uint8Array(32);
 
-                lastNode.connect(delayNode);
-                delayNode.connect(delayGain);
-                delayGain.connect(lastNode);
-
-                lastNode.connect(analyser);
-                analyser.connect(audioCtx.destination);
-                startVisualizerLoop();
-            } catch(e) {
-                console.error("Web Audio API Initialization Error:", e);
+        function renderFrame() {
+            requestAnimationFrame(renderFrame);
+            if (!analyser || isPlaying === false) return;
+            analyser.getByteFrequencyData(dataArray);
+            let avg = 0;
+            for(let i=0; i<bars.length; i++) {
+                const heightPercent = Math.max(10, (dataArray[i] / 255) * 100);
+                if (bars[i]) bars[i].style.height = heightPercent + '%';
+                avg += dataArray[i];
+            }
+            if (reactiveVisualizerRing) {
+                const scale = 1 + (avg / (32 * 255)) * 0.25;
+                reactiveVisualizerRing.scale.set(scale, scale, scale);
             }
         }
+        renderFrame();
+    }
 
-        // Stereo Spatial Panner Control
-        function setStereoPan(val) {
-            const panVal = parseFloat(val);
-            if (stereoPanner && stereoPanner.pan) {
-                stereoPanner.pan.value = panVal;
+    function buildEQSliders() {
+        const grid = document.getElementById('eq-sliders-grid');
+        if (!grid) return;
+        grid.innerHTML = '';
+        FREQUENCIES.forEach((freq, idx) => {
+            const col = document.createElement('div');
+            col.className = "flex flex-col items-center h-full justify-between";
+            col.innerHTML = `
+                <span class="text-[9px] text-slate-400 font-mono">${freq >= 1000 ? (freq/1000)+'k' : freq}</span>
+                <input type="range" min="-15" max="15" step="1" value="0" orient="vertical" oninput="setEQGain(${idx}, this.value)" class="h-32 accent-cyan-400 cursor-pointer">
+                <span class="text-[9px] text-cyan-400 font-mono">0dB</span>
+            `;
+            grid.appendChild(col);
+        });
+    }
+
+    function setEQGain(index, val) {
+        if (eqFilters[index]) eqFilters[index].gain.value = parseFloat(val);
+    }
+
+    function setSpeed(val) {
+        audioElement.playbackRate = parseFloat(val);
+        document.getElementById('speed-val').innerText = parseFloat(val).toFixed(2) + 'x';
+    }
+
+    function setReverb(val) {
+        if (delayGain) delayGain.gain.value = parseFloat(val) * 0.4;
+        document.getElementById('reverb-val').innerText = Math.round(val * 100) + '%';
+    }
+
+    function setAmbientVolume(type, val) {
+        if (!ambientAudioCtx) {
+            ambientAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        const volume = parseFloat(val);
+        if (volume > 0 && !ambientNodes[type]) {
+            const bufferSize = ambientAudioCtx.sampleRate * 2;
+            const buffer = ambientAudioCtx.createBuffer(1, bufferSize, ambientAudioCtx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+                data[i] = (type === 'rain') ? Math.random() * 2 - 1 : (Math.random() * 2 - 1) * 0.2;
             }
-            const label = document.getElementById('pan-val');
-            if (label) {
-                label.innerText = panVal === 0 ? 'Center (0.0)' : panVal < 0 ? `Left (${panVal.toFixed(1)})` : `Right (+${panVal.toFixed(1)})`;
+            const noise = ambientAudioCtx.createBufferSource();
+            noise.buffer = buffer;
+            noise.loop = true;
+
+            const filter = ambientAudioCtx.createBiquadFilter();
+            filter.type = type === 'rain' ? 'bandpass' : 'lowpass';
+            filter.frequency.value = type === 'rain' ? 1000 : 150;
+
+            const gainNode = ambientAudioCtx.createGain();
+            gainNode.gain.value = volume;
+
+            noise.connect(filter);
+            filter.connect(gainNode);
+            gainNode.connect(ambientAudioCtx.destination);
+            noise.start();
+
+            ambientNodes[type] = { source: noise, gain: gainNode };
+        } else if (ambientNodes[type]) {
+            ambientNodes[type].gain.gain.value = volume;
+        }
+    }
+
+    function teleportRandom() {
+        if (stationsList.length === 0) return;
+        const randomStation = stationsList[Math.floor(Math.random() * stationsList.length)];
+        selectAndPlayStation(randomStation);
+    }
+
+    function handleSearch(query) {
+        const filtered = stationsList.filter(s => s.name.toLowerCase().includes(query.toLowerCase()) || (s.country && s.country.toLowerCase().includes(query.toLowerCase())));
+        renderStations(filtered);
+    }
+
+    function filterByGenre(genre, btn) {
+        document.querySelectorAll('.genre-chip').forEach(c => {
+            c.className = "genre-chip px-3 py-1 rounded-full bg-slate-800 text-slate-300 hover:bg-slate-700 whitespace-nowrap transition";
+        });
+        btn.className = "genre-chip px-3 py-1 rounded-full bg-cyan-500 text-slate-950 font-semibold whitespace-nowrap transition";
+        
+        if (genre === 'all') {
+            renderStations(stationsList);
+        } else {
+            const filtered = stationsList.filter(s => s.tags && s.tags.toLowerCase().includes(genre));
+            renderStations(filtered.length > 0 ? filtered : stationsList);
+        }
+    }
+
+    function populateGlobeMarkers(stations) {
+        if (!stationMarkersGroup) return;
+        while (stationMarkersGroup.children.length > 0) {
+            stationMarkersGroup.remove(stationMarkersGroup.children[0]);
+        }
+        const markerGeo = new THREE.SphereGeometry(0.08, 16, 16);
+        const markerMat = new THREE.MeshBasicMaterial({ color: 0x00f3ff });
+
+        stations.forEach(s => {
+            if (s.geo_lat && s.geo_long) {
+                const phi = (90 - s.geo_lat) * (Math.PI / 180);
+                const theta = (s.geo_long + 180) * (Math.PI / 180);
+                const mesh = new THREE.Mesh(markerGeo, markerMat.clone());
+                mesh.position.x = -(GLOBE_RADIUS * Math.sin(phi) * Math.cos(theta));
+                mesh.position.y = GLOBE_RADIUS * Math.cos(phi);
+                mesh.position.z = GLOBE_RADIUS * Math.sin(phi) * Math.sin(theta);
+                mesh.userData = s;
+                stationMarkersGroup.add(mesh);
             }
+        });
+    }
+
+    function renderStations(stations) {
+        const container = document.getElementById('stations-container');
+        if (!container) return;
+        container.innerHTML = '';
+        if (stations.length === 0) {
+            container.innerHTML = `<p class="text-center text-xs text-slate-400 py-6">No matching radio streams found.</p>`;
+            return;
         }
 
-        // Apply Preset EQ Profiles
-        function applyEQPreset(presetKey) {
-            const gains = EQ_PRESETS[presetKey] || EQ_PRESETS.flat;
-            gains.forEach((gain, idx) => {
-                setEQGain(idx, gain);
-                const slider = document.querySelectorAll('#eq-sliders-grid input')[idx];
-                if (slider) slider.value = gain;
-            });
-        }
-
-        // Live Audio Stream Recorder
-        function toggleStreamRecording() {
-            const recordBtn = document.getElementById('record-btn');
-            const recordIcon = document.getElementById('record-icon');
+        stations.forEach(s => {
+            const isFav = favorites.some(f => f.stationuuid === s.stationuuid);
+            const card = document.createElement('div');
+            card.className = `p-3 rounded-xl border transition flex items-center justify-between cursor-pointer ${activeStation && activeStation.stationuuid === s.stationuuid ? 'bg-cyan-500/10 border-cyan-400/50' : 'bg-slate-900/60 border-slate-800 hover:border-slate-700'}`;
             
-            if (!isPlaying || !audioCtx) {
-                alert("Please select and play a live stream first.");
-                return;
-            }
-
-            if (!isRecording) {
-                try {
-                    const dest = audioCtx.createMediaStreamDestination();
-                    analyser.connect(dest);
-                    mediaRecorder = new MediaRecorder(dest.stream);
-                    recordedChunks = [];
-
-                    mediaRecorder.ondataavailable = (e) => {
-                        if (e.data.size > 0) recordedChunks.push(e.data);
-                    };
-
-                    mediaRecorder.onstop = () => {
-                        const blob = new Blob(recordedChunks, { type: 'audio/webm' });
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = `${(activeStation ? activeStation.name : 'Quantum_Stream').replace(/[^a-z0-9]/gi, '_')}_record.webm`;
-                        a.click();
-                        URL.revokeObjectURL(url);
-                    };
-
-                    mediaRecorder.start();
-                    isRecording = true;
-                    recordBtn.classList.add('bg-rose-500/30', 'border-rose-500');
-                    recordIcon.className = "fa-solid fa-stop mr-1.5 text-rose-500 animate-pulse";
-                } catch(err) {
-                    alert("Stream recording not supported on this stream source.");
-                }
-            } else {
-                mediaRecorder.stop();
-                isRecording = false;
-                recordBtn.classList.remove('bg-rose-500/30', 'border-rose-500');
-                recordIcon.className = "fa-solid fa-circle mr-1.5 text-rose-500";
-            }
-        }
-
-        // 4. Visualizer Bars & UI Modals
-        function initVisualizerBars() {
-            const container = document.getElementById('visualizer-bars');
-            container.innerHTML = '';
-            for(let i=0; i<32; i++) {
-                const bar = document.createElement('div');
-                bar.className = "flex-1 bg-gradient-to-t from-cyan-500 to-purple-500 rounded-t transition-all duration-75";
-                bar.style.height = '10%';
-                container.appendChild(bar);
-            }
-        }
-
-        function startVisualizerLoop() {
-            const container = document.getElementById('visualizer-bars');
-            const bars = container.children;
-            const dataArray = new Uint8Array(32);
-
-            function renderFrame() {
-                requestAnimationFrame(renderFrame);
-                if (!analyser || isPlaying === false) return;
-                analyser.getByteFrequencyData(dataArray);
-                let avg = 0;
-                for(let i=0; i<bars.length; i++) {
-                    const heightPercent = Math.max(10, (dataArray[i] / 255) * 100);
-                    bars[i].style.height = heightPercent + '%';
-                    avg += dataArray[i];
-                }
-                if (reactiveVisualizerRing) {
-                    const scale = 1 + (avg / (32 * 255)) * 0.25;
-                    reactiveVisualizerRing.scale.set(scale, scale, scale);
-                }
-            }
-            renderFrame();
-        }
-
-        function buildEQSliders() {
-            const grid = document.getElementById('eq-sliders-grid');
-            grid.innerHTML = '';
-            FREQUENCIES.forEach((freq, idx) => {
-                const col = document.createElement('div');
-                col.className = "flex flex-col items-center h-full justify-between";
-                col.innerHTML = `
-                    <span class="text-[9px] text-slate-400 font-mono">${freq >= 1000 ? (freq/1000)+'k' : freq}</span>
-                    <input type="range" min="-15" max="15" step="1" value="0" orient="vertical" oninput="setEQGain(${idx}, this.value)" class="h-32 accent-cyan-400 cursor-pointer">
-                    <span class="text-[9px] text-cyan-400 font-mono">0dB</span>
-                `;
-                grid.appendChild(col);
-            });
-        }
-
-        function setEQGain(index, val) {
-            if (eqFilters[index]) eqFilters[index].gain.value = parseFloat(val);
-        }
-
-        function setSpeed(val) {
-            audioElement.playbackRate = parseFloat(val);
-            document.getElementById('speed-val').innerText = parseFloat(val).toFixed(2) + 'x';
-        }
-
-        function setReverb(val) {
-            if (delayGain) delayGain.gain.value = parseFloat(val) * 0.4;
-            document.getElementById('reverb-val').innerText = Math.round(val * 100) + '%';
-        }
-
-        function setAmbientVolume(type, val) {
-            if (!ambientAudioCtx) {
-                ambientAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            }
-            const volume = parseFloat(val);
-            if (volume > 0 && !ambientNodes[type]) {
-                // Create procedural buffer source for ambient noise
-                const bufferSize = ambientAudioCtx.sampleRate * 2;
-                const buffer = ambientAudioCtx.createBuffer(1, bufferSize, ambientAudioCtx.sampleRate);
-                const data = buffer.getChannelData(0);
-                for (let i = 0; i < bufferSize; i++) {
-                    data[i] = (type === 'rain') ? Math.random() * 2 - 1 : (Math.random() * 2 - 1) * 0.2;
-                }
-                const noise = ambientAudioCtx.createBufferSource();
-                noise.buffer = buffer;
-                noise.loop = true;
-
-                const filter = ambientAudioCtx.createBiquadFilter();
-                filter.type = type === 'rain' ? 'bandpass' : 'lowpass';
-                filter.frequency.value = type === 'rain' ? 1000 : 150;
-
-                const gainNode = ambientAudioCtx.createGain();
-                gainNode.gain.value = volume;
-
-                noise.connect(filter);
-                filter.connect(gainNode);
-                gainNode.connect(ambientAudioCtx.destination);
-                noise.start();
-
-                ambientNodes[type] = { source: noise, gain: gainNode };
-            } else if (ambientNodes[type]) {
-                ambientNodes[type].gain.gain.value = volume;
-            }
-        }
-
-        function teleportRandom() {
-            if (stationsList.length === 0) return;
-            const randomStation = stationsList[Math.floor(Math.random() * stationsList.length)];
-            selectAndPlayStation(randomStation);
-            if(randomStation.geo_lat && randomStation.geo_long) {
-                camera.position.set(0, 0, 14);
-            }
-        }
-
-        function handleSearch(query) {
-            const filtered = stationsList.filter(s => s.name.toLowerCase().includes(query.toLowerCase()) || (s.country && s.country.toLowerCase().includes(query.toLowerCase())));
-            renderStations(filtered);
-        }
-
-        function filterByGenre(genre, btn) {
-            document.querySelectorAll('.genre-chip').forEach(c => {
-                c.className = "genre-chip px-3 py-1 rounded-full bg-slate-800 text-slate-300 hover:bg-slate-700 whitespace-nowrap transition";
-            });
-            btn.className = "genre-chip px-3 py-1 rounded-full bg-cyan-500 text-slate-950 font-semibold whitespace-nowrap transition";
-            
-            if (genre === 'all') {
-                renderStations(stationsList);
-            } else {
-                const filtered = stationsList.filter(s => s.tags && s.tags.toLowerCase().includes(genre));
-                renderStations(filtered.length > 0 ? filtered : stationsList);
-            }
-        }
-
-        function populateGlobeMarkers(stations) {
-            if (!stationMarkersGroup) return;
-            while (stationMarkersGroup.children.length > 0) {
-                stationMarkersGroup.remove(stationMarkersGroup.children[0]);
-            }
-            const markerGeo = new THREE.SphereGeometry(0.08, 16, 16);
-            const markerMat = new THREE.MeshBasicMaterial({ color: 0x00f3ff });
-
-            stations.forEach(s => {
-                if (s.geo_lat && s.geo_long) {
-                    const phi = (90 - s.geo_lat) * (Math.PI / 180);
-                    const theta = (s.geo_long + 180) * (Math.PI / 180);
-                    const mesh = new THREE.Mesh(markerGeo, markerMat.clone());
-                    mesh.position.x = -(GLOBE_RADIUS * Math.sin(phi) * Math.cos(theta));
-                    mesh.position.y = GLOBE_RADIUS * Math.cos(phi);
-                    mesh.position.z = GLOBE_RADIUS * Math.sin(phi) * Math.sin(theta);
-                    mesh.userData = s;
-                    stationMarkersGroup.add(mesh);
-                }
-            });
-        }
-
-        function renderStations(stations) {
-            const container = document.getElementById('stations-container');
-            container.innerHTML = '';
-            if (stations.length === 0) {
-                container.innerHTML = `<p class="text-center text-xs text-slate-400 py-6">No matching radio streams found.</p>`;
-                return;
-            }
-
-            stations.forEach(s => {
-                const isFav = favorites.some(f => f.stationuuid === s.stationuuid);
-                const card = document.createElement('div');
-                card.className = `p-3 rounded-xl border transition flex items-center justify-between cursor-pointer ${activeStation && activeStation.stationuuid === s.stationuuid ? 'bg-cyan-500/10 border-cyan-400/50' : 'bg-slate-900/60 border-slate-800 hover:border-slate-700'}`;
-                
-                card.innerHTML = `
-                    <div class="flex items-center gap-3 overflow-hidden">
-                        <button onclick="event.stopPropagation(); selectAndPlayStation(${JSON.stringify(s).replace(/"/g, '&quot;')})" class="w-8 h-8 rounded-lg bg-cyan-500/20 text-cyan-400 flex items-center justify-center text-xs flex-shrink-0">
-                            <i class="fa-solid fa-play"></i>
-                        </button>
-                        <div class="overflow-hidden">
-                            <h5 class="text-xs font-semibold text-slate-200 truncate">${s.name}</h5>
-                            <p class="text-[10px] text-slate-400 truncate">${s.country || 'Global Stream'}</p>
-                        </div>
-                    </div>
-                    <button onclick="event.stopPropagation(); toggleFavorite(${JSON.stringify(s).replace(/"/g, '&quot;')}, this)" class="text-xs ${isFav ? 'text-amber-400' : 'text-slate-600 hover:text-slate-400'} ml-2">
-                        <i class="fa-solid fa-star"></i>
+            card.innerHTML = `
+                <div class="flex items-center gap-3 overflow-hidden">
+                    <button onclick="event.stopPropagation(); selectAndPlayStation(${JSON.stringify(s).replace(/"/g, '&quot;')})" class="w-8 h-8 rounded-lg bg-cyan-500/20 text-cyan-400 flex items-center justify-center text-xs flex-shrink-0">
+                        <i class="fa-solid fa-play"></i>
                     </button>
-                `;
-                card.onclick = () => selectAndPlayStation(s);
-                container.appendChild(card);
-            });
-        }
+                    <div class="overflow-hidden">
+                        <h5 class="text-xs font-semibold text-slate-200 truncate">${s.name}</h5>
+                        <p class="text-[10px] text-slate-400 truncate">${s.country || 'Global Stream'}</p>
+                    </div>
+                </div>
+                <button onclick="event.stopPropagation(); toggleFavorite(${JSON.stringify(s).replace(/"/g, '&quot;')}, this)" class="text-xs ${isFav ? 'text-amber-400' : 'text-slate-600 hover:text-slate-400'} ml-2">
+                    <i class="fa-solid fa-star"></i>
+                </button>
+            `;
+            card.onclick = () => selectAndPlayStation(s);
+            container.appendChild(card);
+        });
+    }
 
-        function toggleFavorite(station, btn) {
-            const idx = favorites.findIndex(f => f.stationuuid === station.stationuuid);
-            if (idx >= 0) {
-                favorites.splice(idx, 1);
-                btn.className = "text-xs text-slate-600 hover:text-slate-400 ml-2";
-            } else {
-                favorites.push(station);
-                btn.className = "text-xs text-amber-400 ml-2";
-            }
-            localStorage.setItem('qn_favorites', JSON.stringify(favorites));
+    function toggleFavorite(station, btn) {
+        const idx = favorites.findIndex(f => f.stationuuid === station.stationuuid);
+        if (idx >= 0) {
+            favorites.splice(idx, 1);
+            btn.className = "text-xs text-slate-600 hover:text-slate-400 ml-2";
+        } else {
+            favorites.push(station);
+            btn.className = "text-xs text-amber-400 ml-2";
         }
+        localStorage.setItem('qn_favorites', JSON.stringify(favorites));
+    }
 
-        function showFavorites(btn) {
-            document.querySelectorAll('.genre-chip').forEach(c => {
-                c.className = "genre-chip px-3 py-1 rounded-full bg-slate-800 text-slate-300 hover:bg-slate-700 whitespace-nowrap transition";
-            });
-            btn.className = "genre-chip px-3 py-1 rounded-full bg-amber-400 text-slate-950 font-semibold whitespace-nowrap transition";
-            renderStations(favorites);
-        }
+    function showFavorites(btn) {
+        document.querySelectorAll('.genre-chip').forEach(c => {
+            c.className = "genre-chip px-3 py-1 rounded-full bg-slate-800 text-slate-300 hover:bg-slate-700 whitespace-nowrap transition";
+        });
+        btn.className = "genre-chip px-3 py-1 rounded-full bg-amber-400 text-slate-950 font-semibold whitespace-nowrap transition";
+        renderStations(favorites);
+    }
 
-        function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
-        function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+    function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
     </script>
 </body>
 </html>
