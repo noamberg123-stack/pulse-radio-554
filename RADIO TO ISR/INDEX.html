@@ -74,6 +74,9 @@
             <button onclick="openModal('ambient-modal')" class="px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-pink-500/20 border border-pink-500/30 text-xs font-cyber text-pink-300 transition">
                 <i class="fa-solid fa-cloud-rain mr-1.5"></i> Cyber Ambience
             </button>
+            <button onclick="openModal('custom-stream-modal')" class="px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-emerald-500/20 border border-emerald-500/30 text-xs font-cyber text-emerald-300 transition">
+                <i class="fa-solid fa-plus mr-1.5"></i> Add Custom Stream
+            </button>
             <button onclick="toggleStreamRecording()" id="record-btn" class="px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-rose-500/20 border border-rose-500/30 text-xs font-cyber text-rose-400 transition">
                 <i class="fa-solid fa-circle mr-1.5 text-rose-500" id="record-icon"></i> REC Stream
             </button>
@@ -84,6 +87,17 @@
             <div class="hidden sm:flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900/80 border border-slate-700 text-xs">
                 <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
                 <span class="text-emerald-400 font-mono" id="telemetry-ping">NODE SYNC: 14ms</span>
+            </div>
+            <div class="flex items-center gap-2 bg-slate-900/80 border border-slate-700 px-3 py-1 rounded-xl text-xs text-slate-300">
+                <i class="fa-solid fa-moon text-indigo-400"></i>
+                <select id="sleep-timer-select" onchange="setSleepTimer(this.value)" class="bg-transparent focus:outline-none text-xs text-indigo-300 font-cyber cursor-pointer">
+                    <option value="off" class="bg-slate-900">Sleep: Off</option>
+                    <option value="15" class="bg-slate-900">15 Mins</option>
+                    <option value="30" class="bg-slate-900">30 Mins</option>
+                    <option value="45" class="bg-slate-900">45 Mins</option>
+                    <option value="60" class="bg-slate-900">60 Mins</option>
+                </select>
+                <span id="sleep-countdown" class="hidden text-[10px] font-mono text-cyan-400"></span>
             </div>
             <button onclick="teleportRandom()" class="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-purple-600 font-cyber font-bold text-xs text-white shadow-lg shadow-cyan-500/20 hover:scale-105 transition">
                 <i class="fa-solid fa-dice mr-1"></i> Teleport Random
@@ -142,8 +156,8 @@
                     <!-- Dynamic Bars populated via JS -->
                 </div>
                 <div class="text-right">
-                    <div class="text-xs font-mono text-purple-400" id="stream-codec-badge">CODEC: AAC-LC 128kbps</div>
-                    <div class="text-[10px] text-slate-400">REALTIME FFT ANALYZER</div>
+                    <div class="text-xs font-mono text-purple-400" id="stream-codec-badge">CODEC: MP3 / AAC</div>
+                    <div class="text-[10px] text-slate-400" id="stream-server-badge">SERVER: MATRIX ONLINE</div>
                 </div>
             </div>
         </main>
@@ -208,37 +222,46 @@
             <div class="space-y-4">
                 <div>
                     <label class="text-xs text-slate-300 block mb-1">Playback Speed / Pitch: <span id="speed-val" class="text-cyan-400">1.0x</span></label>
-                    <input type="range" min="0.5" max="1.5" step="0.05" value="1.0" oninput="setSpeed(this.value)" class="w-full accent-purple-400">
+                    <input type="range" min="0.5" max="2.0" step="0.05" value="1.0" oninput="setSpeed(this.value)" class="w-full accent-cyan-400 cursor-pointer">
                 </div>
                 <div>
-                    <label class="text-xs text-slate-300 block mb-1">Cyber Space Reverb Mix: <span id="reverb-val" class="text-purple-400">0%</span></label>
-                    <input type="range" min="0" max="1" step="0.05" value="0" oninput="setReverb(this.value)" class="w-full accent-purple-400">
-                </div>
-                <div>
-                    <label class="text-xs text-slate-300 block mb-1">Stereo Spatial Panner: <span id="pan-val" class="text-cyan-400">Center (0.0)</span></label>
-                    <input type="range" min="-1" max="1" step="0.1" value="0" oninput="setStereoPan(this.value)" class="w-full accent-cyan-400">
+                    <label class="text-xs text-slate-300 block mb-1">Cyber Space Reverb Delay: <span id="reverb-val" class="text-purple-400">0%</span></label>
+                    <input type="range" min="0" max="1" step="0.05" value="0" oninput="setReverb(this.value)" class="w-full accent-purple-400 cursor-pointer">
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Ambient Sound Generator Modal -->
-    <div id="ambient-modal" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 hidden flex items-center justify-center p-4">
+    <!-- Custom Stream Modal -->
+    <div id="custom-stream-modal" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 hidden flex items-center justify-center p-4">
         <div class="glass-panel w-full max-w-md rounded-2xl p-6 relative">
             <div class="flex justify-between items-center mb-6">
-                <h3 class="font-cyber font-bold text-pink-400 text-base"><i class="fa-solid fa-cloud-rain mr-2"></i>CYBER AMBIENCE MIXER</h3>
-                <button onclick="closeModal('ambient-modal')" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+                <h3 class="font-cyber font-bold text-emerald-400 text-base"><i class="fa-solid fa-plus-circle mr-2"></i>ADD CUSTOM STREAM NODE</h3>
+                <button onclick="closeModal('custom-stream-modal')" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
             </div>
-            <div class="space-y-4">
+            <form onsubmit="submitCustomStream(event)" class="space-y-4">
                 <div>
-                    <label class="text-xs text-slate-300 block mb-1">Cyber Rain Ambience</label>
-                    <input type="range" min="0" max="1" step="0.05" value="0" oninput="setAmbientVolume('rain', this.value)" class="w-full accent-pink-400">
+                    <label class="text-xs text-slate-300 block mb-1">Station Name</label>
+                    <input type="text" id="custom-name" required placeholder="e.g., Cyber Synthwave Live" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-400">
                 </div>
                 <div>
-                    <label class="text-xs text-slate-300 block mb-1">City Synth Drones</label>
-                    <input type="range" min="0" max="1" step="0.05" value="0" oninput="setAmbientVolume('city', this.value)" class="w-full accent-pink-400">
+                    <label class="text-xs text-slate-300 block mb-1">Stream Audio URL (.mp3 / .aac / stream link)</label>
+                    <input type="url" id="custom-url" required placeholder="https://stream.example.com/live" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-400">
                 </div>
-            </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-xs text-slate-300 block mb-1">Latitude (Optional)</label>
+                        <input type="number" step="any" id="custom-lat" placeholder="e.g. 40.7128" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-400">
+                    </div>
+                    <div>
+                        <label class="text-xs text-slate-300 block mb-1">Longitude (Optional)</label>
+                        <input type="number" step="any" id="custom-long" placeholder="e.g. -74.0060" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-400">
+                    </div>
+                </div>
+                <button type="submit" class="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 font-cyber font-bold text-xs text-slate-950 hover:scale-[1.02] transition">
+                    Inject Stream Matrix
+                </button>
+            </form>
         </div>
     </div>
 
@@ -252,6 +275,7 @@
         let audioElement = document.getElementById('audio-element');
         let isPlaying = false;
         let favorites = JSON.parse(localStorage.getItem('qn_favorites') || '[]');
+        let sleepTimerInterval = null, sleepTimeLeft = 0;
 
         // Three.js Globe & FX Variables
         let scene, camera, renderer, globeMesh, atmosphereMesh, satelliteSwarm, stationMarkersGroup, raycaster, mouse;
@@ -413,10 +437,24 @@
 
         // 2. Fetch Radio Stations from Radio-Browser API with Multi-Mirror Failover
         async function fetchGlobalStations() {
+            try {
+                // Try backend Flask API first
+                const res = await fetch('/api/stations');
+                if (res.ok) {
+                    const data = await res.json();
+                    if (Array.isArray(data) && data.length > 0) {
+                        stationsList = data;
+                        renderStations(stationsList);
+                        populateGlobeMarkers(stationsList);
+                        return;
+                    }
+                }
+            } catch(e) {}
+
+            // Fallback mirrors
             const mirrors = [
                 'https://de1.api.radio-browser.info/json/stations/topclick/50',
-                'https://nl1.api.radio-browser.info/json/stations/topclick/50',
-                'https://at1.api.radio-browser.info/json/stations/topclick/50'
+                'https://nl1.api.radio-browser.info/json/stations/topclick/50'
             ];
 
             let data = null;
@@ -443,73 +481,60 @@
             populateGlobeMarkers(stationsList);
         }
 
-        function renderStations(stations) {
-            const container = document.getElementById('stations-container');
-            container.innerHTML = '';
+        async function submitCustomStream(e) {
+            e.preventDefault();
+            const name = document.getElementById('custom-name').value;
+            const url = document.getElementById('custom-url').value;
+            const lat = document.getElementById('custom-lat').value;
+            const long_val = document.getElementById('custom-long').value;
 
-            stations.forEach((station) => {
-                if (!station.url_resolved) return;
-                const isFav = favorites.some(f => f.stationuuid === station.stationuuid);
-                const card = document.createElement('div');
-                card.className = "p-3 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-cyan-500/50 cursor-pointer transition flex items-center justify-between group";
-                card.innerHTML = `
-                    <div class="overflow-hidden pr-2 flex-1" onclick='selectAndPlayStation(${JSON.stringify(station).replace(/'/g, "&apos;")})'>
-                        <h5 class="font-bold text-xs text-slate-200 truncate group-hover:text-cyan-400 transition">${station.name}</h5>
-                        <p class="text-[10px] text-slate-400 truncate">${station.country || 'Global Stream'} • ${station.codec || 'MP3'}</p>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <button onclick='toggleFavorite(event, ${JSON.stringify(station).replace(/'/g, "&apos;")})' class="text-xs ${isFav ? 'text-amber-400' : 'text-slate-600 hover:text-amber-300'} transition">
-                            <i class="fa-solid fa-star"></i>
-                        </button>
-                        <div onclick='selectAndPlayStation(${JSON.stringify(station).replace(/'/g, "&apos;")})' class="w-7 h-7 rounded-lg bg-slate-800 flex items-center justify-center text-cyan-400 group-hover:bg-cyan-500 group-hover:text-slate-950 transition">
-                            <i class="fa-solid fa-play text-xs"></i>
-                        </div>
-                    </div>
-                `;
-                container.appendChild(card);
-            });
-        }
-
-        function toggleFavorite(e, station) {
-            e.stopPropagation();
-            const idx = favorites.findIndex(f => f.stationuuid === station.stationuuid);
-            if (idx >= 0) {
-                favorites.splice(idx, 1);
-            } else {
-                favorites.push(station);
+            try {
+                const res = await fetch('/api/stations/add', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, url, lat, long: long_val, country: 'User Custom Node' })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    closeModal('custom-stream-modal');
+                    fetchGlobalStations();
+                    selectAndPlayStation(data.station);
+                } else {
+                    alert(data.error || "Failed to add custom stream.");
+                }
+            } catch(err) {
+                alert("Error connecting to custom stream endpoint.");
             }
-            localStorage.setItem('qn_favorites', JSON.stringify(favorites));
-            renderStations(stationsList);
         }
 
-        function showFavorites(btn) {
-            document.querySelectorAll('.genre-chip').forEach(c => {
-                c.className = "genre-chip px-3 py-1 rounded-full bg-slate-800 text-slate-300 hover:bg-slate-700 whitespace-nowrap transition";
-            });
-            btn.className = "genre-chip px-3 py-1 rounded-full bg-amber-400 text-slate-950 font-semibold whitespace-nowrap transition";
-            renderStations(favorites);
-        }
-
-        function populateGlobeMarkers(stations) {
-            while(stationMarkersGroup.children.length > 0) {
-                stationMarkersGroup.remove(stationMarkersGroup.children[0]);
+        function setSleepTimer(mins) {
+            clearInterval(sleepTimerInterval);
+            const countdownEl = document.getElementById('sleep-countdown');
+            if (mins === 'off') {
+                countdownEl.classList.add('hidden');
+                return;
             }
 
-            stations.forEach(station => {
-                if (!station.geo_lat || !station.geo_long) return;
-                const phi = (90 - station.geo_lat) * (Math.PI / 180);
-                const theta = (station.geo_long + 180) * (Math.PI / 180);
-                const x = -(GLOBE_RADIUS * Math.sin(phi) * Math.cos(theta));
-                const z = GLOBE_RADIUS * Math.sin(phi) * Math.sin(theta);
-                const y = GLOBE_RADIUS * Math.cos(phi);
+            sleepTimeLeft = parseInt(mins) * 60;
+            countdownEl.classList.remove('hidden');
 
-                const markerGeo = new THREE.SphereGeometry(0.08, 16, 16);
-                const markerMat = new THREE.MeshBasicMaterial({ color: 0x00f3ff });
-                const marker = new THREE.Mesh(markerGeo, markerMat);
-                marker.position.set(x, y, z);
-                marker.userData = station;
-                stationMarkersGroup.add(marker);
-            });
+            sleepTimerInterval = setInterval(() => {
+                sleepTimeLeft--;
+                const m = Math.floor(sleepTimeLeft / 60);
+                const s = sleepTimeLeft % 60;
+                countdownEl.innerText = `${m}:${s < 10 ? '0' : ''}${s}`;
+
+                if (sleepTimeLeft <= 10 && audioElement.volume > 0.05) {
+                    audioElement.volume = Math.max(0, audioElement.volume - 0.08);
+                }
+
+                if (sleepTimeLeft <= 0) {
+                    clearInterval(sleepTimerInterval);
+                    if (isPlaying) toggleMasterPlay();
+                    document.getElementById('sleep-timer-select').value = 'off';
+                    countdownEl.classList.add('hidden');
+                }
+            }, 1000);
         }
 
         // 3. Audio Engine & Stream Playback
@@ -522,13 +547,25 @@
                 drawLaserArc(station.geo_lat, station.geo_long);
             }
 
+            // Fetch live metadata telemetry
+            fetch(`/api/stream_info?url=${encodeURIComponent(station.url_resolved)}`)
+                .then(res => res.json())
+                .then(info => {
+                    if (info.bitrate) {
+                        document.getElementById('stream-codec-badge').innerText = `CODEC: ${station.codec || 'AAC'} ${info.bitrate}kbps`;
+                    }
+                    if (info.server) {
+                        document.getElementById('stream-server-badge').innerText = `SERVER: ${info.server.substring(0, 20)}`;
+                    }
+                }).catch(() => {});
+
             audioElement.src = station.url_resolved;
             audioElement.play().then(() => {
                 isPlaying = true;
                 document.getElementById('master-play-icon').className = "fa-solid fa-pause";
                 initWebAudioAPI();
             }).catch(err => {
-                audioElement.src = `https://api.allorigins.win/raw?url=${encodeURIComponent(station.url_resolved)}`;
+                audioElement.src = `/api/proxy?url=${encodeURIComponent(station.url_resolved)}`;
                 audioElement.play().then(() => {
                     isPlaying = true;
                     document.getElementById('master-play-icon').className = "fa-solid fa-pause";
@@ -796,6 +833,80 @@
                 const filtered = stationsList.filter(s => s.tags && s.tags.toLowerCase().includes(genre));
                 renderStations(filtered.length > 0 ? filtered : stationsList);
             }
+        }
+
+        function populateGlobeMarkers(stations) {
+            if (!stationMarkersGroup) return;
+            while (stationMarkersGroup.children.length > 0) {
+                stationMarkersGroup.remove(stationMarkersGroup.children[0]);
+            }
+            const markerGeo = new THREE.SphereGeometry(0.08, 16, 16);
+            const markerMat = new THREE.MeshBasicMaterial({ color: 0x00f3ff });
+
+            stations.forEach(s => {
+                if (s.geo_lat && s.geo_long) {
+                    const phi = (90 - s.geo_lat) * (Math.PI / 180);
+                    const theta = (s.geo_long + 180) * (Math.PI / 180);
+                    const mesh = new THREE.Mesh(markerGeo, markerMat.clone());
+                    mesh.position.x = -(GLOBE_RADIUS * Math.sin(phi) * Math.cos(theta));
+                    mesh.position.y = GLOBE_RADIUS * Math.cos(phi);
+                    mesh.position.z = GLOBE_RADIUS * Math.sin(phi) * Math.sin(theta);
+                    mesh.userData = s;
+                    stationMarkersGroup.add(mesh);
+                }
+            });
+        }
+
+        function renderStations(stations) {
+            const container = document.getElementById('stations-container');
+            container.innerHTML = '';
+            if (stations.length === 0) {
+                container.innerHTML = `<p class="text-center text-xs text-slate-400 py-6">No matching radio streams found.</p>`;
+                return;
+            }
+
+            stations.forEach(s => {
+                const isFav = favorites.some(f => f.stationuuid === s.stationuuid);
+                const card = document.createElement('div');
+                card.className = `p-3 rounded-xl border transition flex items-center justify-between cursor-pointer ${activeStation && activeStation.stationuuid === s.stationuuid ? 'bg-cyan-500/10 border-cyan-400/50' : 'bg-slate-900/60 border-slate-800 hover:border-slate-700'}`;
+                
+                card.innerHTML = `
+                    <div class="flex items-center gap-3 overflow-hidden">
+                        <button onclick="event.stopPropagation(); selectAndPlayStation(${JSON.stringify(s).replace(/"/g, '&quot;')})" class="w-8 h-8 rounded-lg bg-cyan-500/20 text-cyan-400 flex items-center justify-center text-xs flex-shrink-0">
+                            <i class="fa-solid fa-play"></i>
+                        </button>
+                        <div class="overflow-hidden">
+                            <h5 class="text-xs font-semibold text-slate-200 truncate">${s.name}</h5>
+                            <p class="text-[10px] text-slate-400 truncate">${s.country || 'Global Stream'}</p>
+                        </div>
+                    </div>
+                    <button onclick="event.stopPropagation(); toggleFavorite(${JSON.stringify(s).replace(/"/g, '&quot;')}, this)" class="text-xs ${isFav ? 'text-amber-400' : 'text-slate-600 hover:text-slate-400'} ml-2">
+                        <i class="fa-solid fa-star"></i>
+                    </button>
+                `;
+                card.onclick = () => selectAndPlayStation(s);
+                container.appendChild(card);
+            });
+        }
+
+        function toggleFavorite(station, btn) {
+            const idx = favorites.findIndex(f => f.stationuuid === station.stationuuid);
+            if (idx >= 0) {
+                favorites.splice(idx, 1);
+                btn.className = "text-xs text-slate-600 hover:text-slate-400 ml-2";
+            } else {
+                favorites.push(station);
+                btn.className = "text-xs text-amber-400 ml-2";
+            }
+            localStorage.setItem('qn_favorites', JSON.stringify(favorites));
+        }
+
+        function showFavorites(btn) {
+            document.querySelectorAll('.genre-chip').forEach(c => {
+                c.className = "genre-chip px-3 py-1 rounded-full bg-slate-800 text-slate-300 hover:bg-slate-700 whitespace-nowrap transition";
+            });
+            btn.className = "genre-chip px-3 py-1 rounded-full bg-amber-400 text-slate-950 font-semibold whitespace-nowrap transition";
+            renderStations(favorites);
         }
 
         function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
