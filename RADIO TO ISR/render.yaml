@@ -1,15 +1,8 @@
-{
-"version": 2,
-"builds": [
-{
-"src": "main.py",
-"use": "@render/python"
-}
-],
-"routes": [
-{
-"src": "/(.*)",
-"destination": "main.py"
-}
-]
-}  
+services:
+  - type: web
+    name: pulse-radio
+    runtime: python
+    region: frankfurt
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
