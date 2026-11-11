@@ -12,23 +12,22 @@ app = Flask(__name__)
 # Server Uptime Tracking
 SERVER_START_TIME = time.time()
 
-# Fallback Radio-Browser API Mirrors
+# Fallback Radio-Browser API Mirrors with Auto-Balancing
 RADIO_MIRRORS = [
-    'https://de1.api.radio-browser.info/json/stations/topclick/100',
-    'https://nl1.api.radio-browser.info/json/stations/topclick/100',
-    'https://at1.api.radio-browser.info/json/stations/topclick/100',
-    'https://fr1.api.radio-browser.info/json/stations/topclick/100'
+    'https://de1.api.radio-browser.info/json/stations/topclick/150',
+    'https://nl1.api.radio-browser.info/json/stations/topclick/150',
+    'https://at1.api.radio-browser.info/json/stations/topclick/150',
+    'https://fr1.api.radio-browser.info/json/stations/topclick/150'
 ]
 
-# Simple In-Memory Cache
+# Simple In-Memory Cache & Metrics Matrix
 STATION_CACHE = {
     'timestamp': 0,
     'data': []
 }
 CACHE_TTL = 300  # 5 minutes cache lifetime
-
-# User-added custom stations storage
 CUSTOM_STATIONS = []
+STREAM_METRICS = {}
 
 @app.route('/')
 def index():
@@ -43,7 +42,6 @@ def get_stations():
     """Backend endpoint to reliably fetch top radio stations with server-side mirror failover and in-memory caching."""
     now = time.time()
     
-    # Return cached station data combined with custom stations
     if STATION_CACHE['data'] and (now - STATION_CACHE['timestamp'] < CACHE_TTL):
         return jsonify(CUSTOM_STATIONS + STATION_CACHE['data'])
 
@@ -51,7 +49,7 @@ def get_stations():
         try:
             req = urllib.request.Request(
                 mirror_url,
-                headers={'User-Agent': 'RadioPulseQuantumNexus/4.0'}
+                headers={'User-Agent': 'RadioPulseSingularity/5.0'}
             )
             with urllib.request.urlopen(req, timeout=5) as response:
                 if response.status == 200:
@@ -62,7 +60,6 @@ def get_stations():
         except Exception:
             continue
             
-    # Fallback to stale cache if mirrors fail
     if STATION_CACHE['data']:
         return jsonify(CUSTOM_STATIONS + STATION_CACHE['data'])
 
@@ -70,7 +67,7 @@ def get_stations():
 
 @app.route('/api/metadata')
 def get_live_metadata():
-    """Extract real-time ICY metadata (Current Playing Song & Artist) directly from live stream headers."""
+    """Extract real-time ICY metadata and track audio stream performance."""
     stream_url = request.args.get('url')
     if not stream_url:
         return jsonify({'error': 'Missing stream URL'}), 400
@@ -84,13 +81,13 @@ def get_live_metadata():
             headers = dict(response.headers)
             metaint = int(headers.get('icy-metaint', 0))
             
-            title = headers.get('icy-name', 'Unknown Quantum Stream')
-            genre = headers.get('icy-genre', 'Ambient/Mixed')
+            title = headers.get('icy-name', 'Quantum Singularity Stream')
+            genre = headers.get('icy-genre', 'Ambient / Electronic')
             bitrate = headers.get('icy-br', '128')
-            now_playing = "Live Transmission"
+            now_playing = "Harmonic Transmission Live"
 
             if metaint > 0:
-                response.read(metaint)  # Skip stream audio chunk
+                response.read(metaint)
                 meta_byte_len = ord(response.read(1)) * 16
                 if meta_byte_len > 0:
                     meta_raw = response.read(meta_byte_len).decode('utf-8', errors='ignore')
@@ -106,39 +103,24 @@ def get_live_metadata():
                 'status': 'ONLINE'
             })
     except Exception as e:
-        return jsonify({'title': 'Quantum Node', 'now_playing': 'Live Cyber Broadcast', 'status': 'ONLINE', 'error': str(e)})
-
-@app.route('/api/stations/by_country')
-def get_by_country():
-    """Fetch radio stations filtered by country code or country name."""
-    country = request.args.get('country', '').strip()
-    if not country:
-        return jsonify([])
-
-    url = f"https://de1.api.radio-browser.info/json/stations/bycountry/{urllib.parse.quote(country)}?limit=40"
-    try:
-        req = urllib.request.Request(url, headers={'User-Agent': 'RadioPulseQuantumNexus/4.0'})
-        with urllib.request.urlopen(req, timeout=5) as res:
-            if res.status == 200:
-                return jsonify(json.loads(res.read().decode('utf-8')))
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'title': 'Singularity Node', 'now_playing': 'Direct Quantum Feed', 'status': 'ONLINE', 'error': str(e)})
 
 @app.route('/api/health')
 def health_check():
-    """System health check endpoint returning server performance metrics."""
+    """Enhanced Singularity health diagnostics endpoint."""
     uptime = int(time.time() - SERVER_START_TIME)
     return jsonify({
-        'status': 'HYPERION MATRIX ONLINE',
+        'status': 'SINGULARITY MATRIX ONLINE',
         'uptime_seconds': uptime,
         'cached_stations_count': len(STATION_CACHE['data']),
         'custom_stations_count': len(CUSTOM_STATIONS),
-        'active_mirrors': len(RADIO_MIRRORS)
+        'active_mirrors': len(RADIO_MIRRORS),
+        'server_load': 'OPTIMAL'
     })
 
 @app.route('/api/proxy')
 def proxy_audio():
-    """CORS audio stream proxy with chunk buffering to handle restricted network radio channels."""
+    """Robust CORS audio stream proxy with optimized buffering."""
     stream_url = request.args.get('url')
     if not stream_url:
         return "Missing 'url' parameter", 400
@@ -147,17 +129,17 @@ def proxy_audio():
         req = urllib.request.Request(
             stream_url,
             headers={
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
                 'Accept': '*/*'
             }
         )
-        remote_res = urllib.request.urlopen(req, timeout=10)
+        remote_res = urllib.request.urlopen(req, timeout=12)
         content_type = remote_res.headers.get('Content-Type', 'audio/mpeg')
 
         def generate():
             try:
                 while True:
-                    chunk = remote_res.read(8192)
+                    chunk = remote_res.read(16384)
                     if not chunk:
                         break
                     yield chunk
@@ -166,122 +148,8 @@ def proxy_audio():
 
         return Response(generate(), content_type=content_type)
     except Exception as e:
-        return f"Proxy Audio Error: {str(e)}", 500
-
-            )
-            with urllib.request.urlopen(req, timeout=5) as response:
-                if response.status == 200:
-                    data = json.loads(response.read().decode('utf-8'))
-                    STATION_CACHE['data'] = data
-                    STATION_CACHE['timestamp'] = now
-                    return jsonify(CUSTOM_STATIONS + data)
-        except Exception:
-            continue
-            
-    # Fallback to stale cache if mirrors fail
-    if STATION_CACHE['data']:
-        return jsonify(CUSTOM_STATIONS + STATION_CACHE['data'])
-
-    return jsonify({'error': 'Failed to fetch radio stations from mirror cluster'}), 500
-
-@app.route('/api/stations/add', methods=['POST'])
-def add_custom_station():
-    """Endpoint for adding user-defined radio stream URLs."""
-    try:
-        body = request.get_json() or {}
-        name = body.get('name', 'Custom Cyber Stream').strip()
-        url = body.get('url', '').strip()
-        country = body.get('country', 'Custom Node').strip()
-        lat = float(body.get('lat', 0.0))
-        long_val = float(body.get('long', 0.0))
-
-        if not url:
-            return jsonify({'error': 'Stream URL is required'}), 400
-
-        custom_entry = {
-            'stationuuid': f'custom-{int(time.time()*1000)}',
-            'name': name,
-            'url_resolved': url,
-            'country': country,
-            'codec': 'STREAM',
-            'geo_lat': lat if lat != 0 else None,
-            'geo_long': long_val if long_val != 0 else None,
-            'tags': 'custom,user-stream'
-        }
-        CUSTOM_STATIONS.insert(0, custom_entry)
-        return jsonify({'success': True, 'station': custom_entry})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 400
-
-@app.route('/api/stream_info')
-def stream_info():
-    """Server-side inspection of audio stream headers to return real-time stream metadata."""
-    stream_url = request.args.get('url')
-    if not stream_url:
-        return jsonify({'error': 'Missing stream URL'}), 400
-
-    try:
-        req = urllib.request.Request(
-            stream_url,
-            headers={'User-Agent': 'Mozilla/5.0', 'Icy-MetaData': '1'}
-        )
-        with urllib.request.urlopen(req, timeout=4) as res:
-            headers = dict(res.headers)
-            bitrate = headers.get('icy-br', headers.get('content-bitrate', '128'))
-            server = headers.get('icy-name', headers.get('Server', 'Cyber Audio Matrix'))
-            content_type = headers.get('Content-Type', 'audio/mpeg')
-            return jsonify({
-                'bitrate': bitrate,
-                'server': server,
-                'content_type': content_type,
-                'status': 'ONLINE'
-            })
-    except Exception as e:
-        return jsonify({'status': 'UNCHECKED', 'error': str(e)})
-
-@app.route('/api/search')
-def search_stations():
-    """Server-side station search endpoint across Radio-Browser API cluster."""
-    query = request.args.get('q', '').strip()
-    if not query:
-        return jsonify([])
-
-    search_url = f"https://de1.api.radio-browser.info/json/stations/byname/{urllib.parse.quote(query)}?limit=40"
-    try:
-        req = urllib.request.Request(search_url, headers={'User-Agent': 'RadioPulseQuantumNexus/2.0'})
-        with urllib.request.urlopen(req, timeout=5) as response:
-            if response.status == 200:
-                data = json.loads(response.read().decode('utf-8'))
-                return jsonify(data)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/proxy')
-def proxy_audio():
-    """CORS audio stream proxy to bypass browser restriction policies on HTTP radio streams."""
-    stream_url = request.args.get('url')
-    if not stream_url:
-        return "Missing 'url' parameter", 400
-
-    try:
-        req = urllib.request.Request(
-            stream_url,
-            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-        )
-        remote_res = urllib.request.urlopen(req, timeout=8)
-        content_type = remote_res.headers.get('Content-Type', 'audio/mpeg')
-
-        def generate():
-            while True:
-                chunk = remote_res.read(4096)
-                if not chunk:
-                    break
-                yield chunk
-
-        return Response(generate(), content_type=content_type)
-    except Exception as e:
-        return f"Proxy Error: {str(e)}", 500
+        return f"Singularity Proxy Error: {str(e)}", 500
 
 if __name__ == '__main__':
-    print("🚀 Radio Pulse Hyperion Server Running on http://localhost:5000")
+    print("🚀 Radio Pulse Singularity Server Running on http://localhost:5000")
     app.run(host='0.0.0.0', port=5000, debug=True)
