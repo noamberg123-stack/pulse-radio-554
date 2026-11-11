@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Radio Pulse: Quantum Nexus Apex</title>
-
+    
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -23,7 +23,7 @@
     <!-- FontAwesome & Google Fonts -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
-
+    
     <!-- Three.js & Leaflet Maps -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -32,7 +32,7 @@
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #060810; color: #f8fafc; overflow: hidden; }
         .font-cyber { font-family: 'Orbitron', sans-serif; }
-
+        
         .glass-panel {
             background: rgba(11, 17, 32, 0.85);
             backdrop-filter: blur(16px);
@@ -59,7 +59,7 @@
             </div>
             <div>
                 <h1 class="font-cyber font-bold text-lg tracking-wider text-cyan-400 neon-glow">QUANTUM NEXUS</h1>
-                <p class="text-xs text-slate-400">Apex Global Radio Stream Matrix</p>
+                <p class="text-xs text-slate-400">Apex Global Radio Stream Matrix v2.0</p>
             </div>
         </div>
 
@@ -90,7 +90,7 @@
 
     <!-- Main Application Split Workspace -->
     <div class="flex-1 flex flex-col lg:flex-row relative overflow-hidden">
-
+        
         <!-- Left Sidebar: Station Explorer -->
         <aside class="w-full lg:w-96 glass-panel flex flex-col z-40 border-r border-cyan-500/10">
             <!-- Search & Filter Header -->
@@ -103,11 +103,11 @@
                 <!-- Genre & Country Tags -->
                 <div class="flex gap-1.5 overflow-x-auto pb-1 custom-scrollbar text-xs">
                     <button onclick="filterByGenre('all', this)" class="genre-chip px-3 py-1 rounded-full bg-cyan-500 text-slate-950 font-semibold whitespace-nowrap transition">All</button>
+                    <button onclick="showFavorites(this)" class="genre-chip px-3 py-1 rounded-full bg-slate-800 text-amber-300 hover:bg-slate-700 whitespace-nowrap transition"><i class="fa-solid fa-star mr-1"></i>Saved</button>
                     <button onclick="filterByGenre('electronic', this)" class="genre-chip px-3 py-1 rounded-full bg-slate-800 text-slate-300 hover:bg-slate-700 whitespace-nowrap transition">Electronic</button>
                     <button onclick="filterByGenre('rock', this)" class="genre-chip px-3 py-1 rounded-full bg-slate-800 text-slate-300 hover:bg-slate-700 whitespace-nowrap transition">Rock</button>
                     <button onclick="filterByGenre('jazz', this)" class="genre-chip px-3 py-1 rounded-full bg-slate-800 text-slate-300 hover:bg-slate-700 whitespace-nowrap transition">Jazz</button>
                     <button onclick="filterByGenre('classical', this)" class="genre-chip px-3 py-1 rounded-full bg-slate-800 text-slate-300 hover:bg-slate-700 whitespace-nowrap transition">Classical</button>
-                    <button onclick="filterByGenre('ambient', this)" class="genre-chip px-3 py-1 rounded-full bg-slate-800 text-slate-300 hover:bg-slate-700 whitespace-nowrap transition">Ambient</button>
                 </div>
             </div>
 
@@ -123,7 +123,7 @@
         <!-- Right Workspace: 3D WebGL Globe & Canvas -->
         <main class="flex-1 relative bg-slate-950 flex flex-col">
             <div id="webgl-container" class="absolute inset-0 z-10"></div>
-
+            
             <!-- Floating Globe Target Reticle -->
             <div class="absolute inset-0 pointer-events-none flex items-center justify-center z-20">
                 <div class="w-32 h-32 rounded-full border border-cyan-500/20 animate-ping absolute"></div>
@@ -233,9 +233,11 @@
         let activeStation = null;
         let audioElement = document.getElementById('audio-element');
         let isPlaying = false;
+        let favorites = JSON.parse(localStorage.getItem('qn_favorites') || '[]');
 
-        // Three.js Globe Variables
-        let scene, camera, renderer, globeMesh, atmosphereMesh, satelliteSwarm, stationMarkersGroup;
+        // Three.js Globe & FX Variables
+        let scene, camera, renderer, globeMesh, atmosphereMesh, satelliteSwarm, stationMarkersGroup, raycaster, mouse;
+        let activeArcMesh = null, reactiveVisualizerRing = null;
         const GLOBE_RADIUS = 5;
 
         // Web Audio Context & Equalizer
@@ -271,6 +273,11 @@
             controls.minDistance = 8;
             controls.maxDistance = 25;
 
+            // Raycaster for 3D Pin Clicking
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+            renderer.domElement.addEventListener('click', onGlobeClick);
+
             // Lights
             scene.add(new THREE.AmbientLight(0xffffff, 0.8));
             const pointLight = new THREE.PointLight(0x00f3ff, 2, 50);
@@ -295,6 +302,13 @@
             );
             scene.add(atmosphereMesh);
 
+            // 3D Audio-Reactive Ring
+            const ringGeo = new THREE.RingGeometry(GLOBE_RADIUS * 1.15, GLOBE_RADIUS * 1.18, 64);
+            const ringMat = new THREE.MeshBasicMaterial({ color: 0xff0055, side: THREE.DoubleSide, transparent: true, opacity: 0.6 });
+            reactiveVisualizerRing = new THREE.Mesh(ringGeo, ringMat);
+            reactiveVisualizerRing.rotation.x = Math.PI / 2;
+            scene.add(reactiveVisualizerRing);
+
             // Satellite Swarm Ring
             const swarmGeo = new THREE.BufferGeometry();
             const count = 300;
@@ -317,6 +331,43 @@
 
             window.addEventListener('resize', onWindowResize);
             animateGlobe();
+        }
+
+        function onGlobeClick(event) {
+            const rect = renderer.domElement.getBoundingClientRect();
+            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+
+            const intersects = raycaster.intersectObjects(stationMarkersGroup.children);
+            if (intersects.length > 0) {
+                const clickedStation = intersects[0].object.userData;
+                if (clickedStation) selectAndPlayStation(clickedStation);
+            }
+        }
+
+        function drawLaserArc(lat, lng) {
+            if (activeArcMesh) scene.remove(activeArcMesh);
+
+            const phi = (90 - lat) * (Math.PI / 180);
+            const theta = (lng + 180) * (Math.PI / 180);
+            const endVec = new THREE.Vector3(
+                -(GLOBE_RADIUS * Math.sin(phi) * Math.cos(theta)),
+                GLOBE_RADIUS * Math.cos(phi),
+                GLOBE_RADIUS * Math.sin(phi) * Math.sin(theta)
+            );
+            const startVec = new THREE.Vector3(0, GLOBE_RADIUS, 0);
+
+            const midVec = startVec.clone().add(endVec).multiplyScalar(0.7);
+            midVec.setLength(GLOBE_RADIUS * 1.5);
+
+            const curve = new THREE.QuadraticBezierCurve3(startVec, midVec, endVec);
+            const points = curve.getPoints(50);
+            const curveGeo = new THREE.BufferGeometry().setFromPoints(points);
+            const curveMat = new THREE.LineBasicMaterial({ color: 0x00f3ff, linewidth: 3 });
+            
+            activeArcMesh = new THREE.Line(curveGeo, curveMat);
+            scene.add(activeArcMesh);
         }
 
         function animateGlobe() {
@@ -371,22 +422,47 @@
             const container = document.getElementById('stations-container');
             container.innerHTML = '';
 
-            stations.forEach((station, index) => {
+            stations.forEach((station) => {
                 if (!station.url_resolved) return;
+                const isFav = favorites.some(f => f.stationuuid === station.stationuuid);
                 const card = document.createElement('div');
                 card.className = "p-3 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-cyan-500/50 cursor-pointer transition flex items-center justify-between group";
                 card.innerHTML = `
-                    <div class="overflow-hidden pr-2">
+                    <div class="overflow-hidden pr-2 flex-1" onclick='selectAndPlayStation(${JSON.stringify(station).replace(/'/g, "&apos;")})'>
                         <h5 class="font-bold text-xs text-slate-200 truncate group-hover:text-cyan-400 transition">${station.name}</h5>
                         <p class="text-[10px] text-slate-400 truncate">${station.country || 'Global Stream'} • ${station.codec || 'MP3'}</p>
                     </div>
-                    <div class="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-cyan-400 group-hover:bg-cyan-500 group-hover:text-slate-950 transition">
-                        <i class="fa-solid fa-play text-xs"></i>
+                    <div class="flex items-center gap-2">
+                        <button onclick='toggleFavorite(event, ${JSON.stringify(station).replace(/'/g, "&apos;")})' class="text-xs ${isFav ? 'text-amber-400' : 'text-slate-600 hover:text-amber-300'} transition">
+                            <i class="fa-solid fa-star"></i>
+                        </button>
+                        <div onclick='selectAndPlayStation(${JSON.stringify(station).replace(/'/g, "&apos;")})' class="w-7 h-7 rounded-lg bg-slate-800 flex items-center justify-center text-cyan-400 group-hover:bg-cyan-500 group-hover:text-slate-950 transition">
+                            <i class="fa-solid fa-play text-xs"></i>
+                        </div>
                     </div>
                 `;
-                card.onclick = () => selectAndPlayStation(station);
                 container.appendChild(card);
             });
+        }
+
+        function toggleFavorite(e, station) {
+            e.stopPropagation();
+            const idx = favorites.findIndex(f => f.stationuuid === station.stationuuid);
+            if (idx >= 0) {
+                favorites.splice(idx, 1);
+            } else {
+                favorites.push(station);
+            }
+            localStorage.setItem('qn_favorites', JSON.stringify(favorites));
+            renderStations(stationsList);
+        }
+
+        function showFavorites(btn) {
+            document.querySelectorAll('.genre-chip').forEach(c => {
+                c.className = "genre-chip px-3 py-1 rounded-full bg-slate-800 text-slate-300 hover:bg-slate-700 whitespace-nowrap transition";
+            });
+            btn.className = "genre-chip px-3 py-1 rounded-full bg-amber-400 text-slate-950 font-semibold whitespace-nowrap transition";
+            renderStations(favorites);
         }
 
         function populateGlobeMarkers(stations) {
@@ -416,15 +492,17 @@
             activeStation = station;
             document.getElementById('active-station-title').innerText = station.name;
             document.getElementById('active-station-location').innerText = `Live from ${station.country || 'Global Matrix'}`;
+            
+            if (station.geo_lat && station.geo_long) {
+                drawLaserArc(station.geo_lat, station.geo_long);
+            }
 
-            // Route stream through secure proxy if needed or direct URL
             audioElement.src = station.url_resolved;
             audioElement.play().then(() => {
                 isPlaying = true;
                 document.getElementById('master-play-icon').className = "fa-solid fa-pause";
                 initWebAudioAPI();
             }).catch(err => {
-                console.warn("Direct stream play blocked, trying fallback proxy...", err);
                 audioElement.src = `https://api.allorigins.win/raw?url=${encodeURIComponent(station.url_resolved)}`;
                 audioElement.play().then(() => {
                     isPlaying = true;
@@ -512,9 +590,15 @@
                 requestAnimationFrame(renderFrame);
                 if (!analyser || isPlaying === false) return;
                 analyser.getByteFrequencyData(dataArray);
+                let avg = 0;
                 for(let i=0; i<bars.length; i++) {
                     const heightPercent = Math.max(10, (dataArray[i] / 255) * 100);
                     bars[i].style.height = heightPercent + '%';
+                    avg += dataArray[i];
+                }
+                if (reactiveVisualizerRing) {
+                    const scale = 1 + (avg / (32 * 255)) * 0.25;
+                    reactiveVisualizerRing.scale.set(scale, scale, scale);
                 }
             }
             renderFrame();
@@ -603,7 +687,7 @@
                 c.className = "genre-chip px-3 py-1 rounded-full bg-slate-800 text-slate-300 hover:bg-slate-700 whitespace-nowrap transition";
             });
             btn.className = "genre-chip px-3 py-1 rounded-full bg-cyan-500 text-slate-950 font-semibold whitespace-nowrap transition";
-
+            
             if (genre === 'all') {
                 renderStations(stationsList);
             } else {
