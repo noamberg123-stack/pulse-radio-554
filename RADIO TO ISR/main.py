@@ -1,4 +1,17 @@
-from flask import Flask, render_template_string, jsonify, request, Response
+"src": "main.py",
+"use": "@vercel/python"
+}
+],
+"routes": [
+{
+"src": "/(.*)",
+"destination": "main.py"
+}
+]
+}
+from flask import Flask, render_template_string, jsonify, request, Response{
+"version": 2,
+"builds": [
 import urllib.request
 import urllib.error
 import urllib.parse
