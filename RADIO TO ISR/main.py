@@ -45,7 +45,7 @@ def get_stations():
         try:
             req = urllib.request.Request(
                 mirror_url,
-                headers={'User-Agent': 'RadioPulseQuantumNexus/2.0'}
+                headers={'User-Agent': 'RadioPulseQuantumNexus/3.0'}
             )
             with urllib.request.urlopen(req, timeout=5) as response:
                 if response.status == 200:
