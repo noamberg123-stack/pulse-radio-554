@@ -69,10 +69,13 @@
                 <i class="fa-solid fa-sliders mr-1.5"></i> 10-Band EQ
             </button>
             <button onclick="openModal('dsp-modal')" class="px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-purple-500/20 border border-purple-500/30 text-xs font-cyber text-purple-300 transition">
-                <i class="fa-solid fa-wand-magic-sparkles mr-1.5"></i> Audio FX & Reverb
+                <i class="fa-solid fa-wand-magic-sparkles mr-1.5"></i> Audio FX & Spatial
             </button>
             <button onclick="openModal('ambient-modal')" class="px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-pink-500/20 border border-pink-500/30 text-xs font-cyber text-pink-300 transition">
                 <i class="fa-solid fa-cloud-rain mr-1.5"></i> Cyber Ambience
+            </button>
+            <button onclick="toggleStreamRecording()" id="record-btn" class="px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-rose-500/20 border border-rose-500/30 text-xs font-cyber text-rose-400 transition">
+                <i class="fa-solid fa-circle mr-1.5 text-rose-500" id="record-icon"></i> REC Stream
             </button>
         </div>
 
@@ -167,8 +170,12 @@
 
         <!-- Volume & Settings -->
         <div class="flex items-center gap-4 w-60 justify-end">
+            <div class="flex items-center gap-2">
+                <i class="fa-solid fa-arrows-left-right text-slate-500 text-xs" title="Stereo Pan"></i>
+                <input type="range" min="-1" max="1" step="0.1" value="0" oninput="setStereoPan(this.value)" class="w-16 accent-purple-400 cursor-pointer" title="Stereo Panner">
+            </div>
             <i class="fa-solid fa-volume-high text-slate-400 text-sm"></i>
-            <input type="range" min="0" max="1" step="0.05" value="1" oninput="setMasterVolume(this.value)" class="w-28 accent-cyan-400 cursor-pointer">
+            <input type="range" min="0" max="1" step="0.05" value="1" oninput="setMasterVolume(this.value)" class="w-24 accent-cyan-400 cursor-pointer">
             <audio id="audio-element" crossorigin="anonymous"></audio>
         </div>
     </footer>
@@ -178,7 +185,14 @@
         <div class="glass-panel w-full max-w-2xl rounded-2xl p-6 relative">
             <div class="flex justify-between items-center mb-6">
                 <h3 class="font-cyber font-bold text-cyan-400 text-base"><i class="fa-solid fa-sliders mr-2"></i>10-BAND GRAPHIC EQUALIZER</h3>
-                <button onclick="closeModal('eq-modal')" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+                <div class="flex items-center gap-2">
+                    <span class="text-xs text-slate-400 font-cyber">Presets:</span>
+                    <button onclick="applyEQPreset('flat')" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-300">Flat</button>
+                    <button onclick="applyEQPreset('bass')" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-cyan-500/20 text-[10px] text-cyan-300 border border-cyan-500/30">Bass Boost</button>
+                    <button onclick="applyEQPreset('vocal')" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-purple-500/20 text-[10px] text-purple-300 border border-purple-500/30">Vocal</button>
+                    <button onclick="applyEQPreset('cyber')" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-pink-500/20 text-[10px] text-pink-300 border border-pink-500/30">Cyber Synth</button>
+                    <button onclick="closeModal('eq-modal')" class="text-slate-400 hover:text-white ml-2"><i class="fa-solid fa-xmark text-lg"></i></button>
+                </div>
             </div>
             <div class="grid grid-cols-10 gap-2 h-48 items-end" id="eq-sliders-grid"></div>
         </div>
@@ -188,7 +202,7 @@
     <div id="dsp-modal" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 hidden flex items-center justify-center p-4">
         <div class="glass-panel w-full max-w-md rounded-2xl p-6 relative">
             <div class="flex justify-between items-center mb-6">
-                <h3 class="font-cyber font-bold text-purple-400 text-base"><i class="fa-solid fa-wand-magic-sparkles mr-2"></i>DSP REVERB & SPEED</h3>
+                <h3 class="font-cyber font-bold text-purple-400 text-base"><i class="fa-solid fa-wand-magic-sparkles mr-2"></i>DSP REVERB & SPATIAL FX</h3>
                 <button onclick="closeModal('dsp-modal')" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
             </div>
             <div class="space-y-4">
@@ -199,6 +213,10 @@
                 <div>
                     <label class="text-xs text-slate-300 block mb-1">Cyber Space Reverb Mix: <span id="reverb-val" class="text-purple-400">0%</span></label>
                     <input type="range" min="0" max="1" step="0.05" value="0" oninput="setReverb(this.value)" class="w-full accent-purple-400">
+                </div>
+                <div>
+                    <label class="text-xs text-slate-300 block mb-1">Stereo Spatial Panner: <span id="pan-val" class="text-cyan-400">Center (0.0)</span></label>
+                    <input type="range" min="-1" max="1" step="0.1" value="0" oninput="setStereoPan(this.value)" class="w-full accent-cyan-400">
                 </div>
             </div>
         </div>
@@ -240,9 +258,16 @@
         let activeArcMesh = null, reactiveVisualizerRing = null;
         const GLOBE_RADIUS = 5;
 
-        // Web Audio Context & Equalizer
-        let audioCtx, audioSource, analyser, eqFilters = [], delayNode, delayGain;
+        // Web Audio Context, Equalizer & Stream Recorder
+        let audioCtx, audioSource, analyser, eqFilters = [], delayNode, delayGain, stereoPanner;
+        let mediaRecorder = null, recordedChunks = [], isRecording = false;
         const FREQUENCIES = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+        const EQ_PRESETS = {
+            flat: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            bass: [8, 6, 4, 2, 0, 0, 0, 1, 2, 3],
+            vocal: [-2, -1, 1, 3, 5, 4, 2, 0, -1, -2],
+            cyber: [6, 4, -2, -4, 2, 5, 6, 4, 5, 7]
+        };
 
         // Ambient Sound Generators
         let ambientAudioCtx, ambientNodes = {};
@@ -544,6 +569,10 @@
                 delayGain = audioCtx.createGain();
                 delayGain.gain.value = 0;
 
+                if (audioCtx.createStereoPanner) {
+                    stereoPanner = audioCtx.createStereoPanner();
+                }
+
                 audioSource = audioCtx.createMediaElementSource(audioElement);
 
                 let lastNode = audioSource;
@@ -557,6 +586,11 @@
                     return filter;
                 });
 
+                if (stereoPanner) {
+                    lastNode.connect(stereoPanner);
+                    lastNode = stereoPanner;
+                }
+
                 lastNode.connect(delayNode);
                 delayNode.connect(delayGain);
                 delayGain.connect(lastNode);
@@ -566,6 +600,74 @@
                 startVisualizerLoop();
             } catch(e) {
                 console.error("Web Audio API Initialization Error:", e);
+            }
+        }
+
+        // Stereo Spatial Panner Control
+        function setStereoPan(val) {
+            const panVal = parseFloat(val);
+            if (stereoPanner && stereoPanner.pan) {
+                stereoPanner.pan.value = panVal;
+            }
+            const label = document.getElementById('pan-val');
+            if (label) {
+                label.innerText = panVal === 0 ? 'Center (0.0)' : panVal < 0 ? `Left (${panVal.toFixed(1)})` : `Right (+${panVal.toFixed(1)})`;
+            }
+        }
+
+        // Apply Preset EQ Profiles
+        function applyEQPreset(presetKey) {
+            const gains = EQ_PRESETS[presetKey] || EQ_PRESETS.flat;
+            gains.forEach((gain, idx) => {
+                setEQGain(idx, gain);
+                const slider = document.querySelectorAll('#eq-sliders-grid input')[idx];
+                if (slider) slider.value = gain;
+            });
+        }
+
+        // Live Audio Stream Recorder
+        function toggleStreamRecording() {
+            const recordBtn = document.getElementById('record-btn');
+            const recordIcon = document.getElementById('record-icon');
+            
+            if (!isPlaying || !audioCtx) {
+                alert("Please select and play a live stream first.");
+                return;
+            }
+
+            if (!isRecording) {
+                try {
+                    const dest = audioCtx.createMediaStreamDestination();
+                    analyser.connect(dest);
+                    mediaRecorder = new MediaRecorder(dest.stream);
+                    recordedChunks = [];
+
+                    mediaRecorder.ondataavailable = (e) => {
+                        if (e.data.size > 0) recordedChunks.push(e.data);
+                    };
+
+                    mediaRecorder.onstop = () => {
+                        const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `${(activeStation ? activeStation.name : 'Quantum_Stream').replace(/[^a-z0-9]/gi, '_')}_record.webm`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                    };
+
+                    mediaRecorder.start();
+                    isRecording = true;
+                    recordBtn.classList.add('bg-rose-500/30', 'border-rose-500');
+                    recordIcon.className = "fa-solid fa-stop mr-1.5 text-rose-500 animate-pulse";
+                } catch(err) {
+                    alert("Stream recording not supported on this stream source.");
+                }
+            } else {
+                mediaRecorder.stop();
+                isRecording = false;
+                recordBtn.classList.remove('bg-rose-500/30', 'border-rose-500');
+                recordIcon.className = "fa-solid fa-circle mr-1.5 text-rose-500";
             }
         }
 
