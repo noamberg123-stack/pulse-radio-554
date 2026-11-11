@@ -3,6 +3,7 @@ import urllib.request
 import urllib.error
 import json
 import os
+import time
 
 app = Flask(__name__)
 
@@ -13,7 +14,14 @@ RADIO_MIRRORS = [
     'https://at1.api.radio-browser.info/json/stations/topclick/100'
 ]
 
-@app.route('/')a
+# Simple In-Memory Cache
+STATION_CACHE = {
+    'timestamp': 0,
+    'data': []
+}
+CACHE_TTL = 300  # 5 minutes cache lifetime
+
+@app.route('/')
 def index():
     if os.path.exists('index.html'):
         with open('index.html', 'r', encoding='utf-8') as f:
@@ -23,7 +31,13 @@ def index():
 
 @app.route('/api/stations')
 def get_stations():
-    """Backend endpoint to reliably fetch top radio stations with server-side mirror failover."""
+    """Backend endpoint to reliably fetch top radio stations with server-side mirror failover and in-memory caching."""
+    now = time.time()
+    
+    # Return cached station data if valid
+    if STATION_CACHE['data'] and (now - STATION_CACHE['timestamp'] < CACHE_TTL):
+        return jsonify(STATION_CACHE['data'])
+
     for mirror_url in RADIO_MIRRORS:
         try:
             req = urllib.request.Request(
@@ -33,10 +47,34 @@ def get_stations():
             with urllib.request.urlopen(req, timeout=5) as response:
                 if response.status == 200:
                     data = json.loads(response.read().decode('utf-8'))
+                    STATION_CACHE['data'] = data
+                    STATION_CACHE['timestamp'] = now
                     return jsonify(data)
-        except Exception as e:
+        except Exception:
             continue
+            
+    # Fallback to stale cache if mirrors fail
+    if STATION_CACHE['data']:
+        return jsonify(STATION_CACHE['data'])
+
     return jsonify({'error': 'Failed to fetch radio stations from mirror cluster'}), 500
+
+@app.route('/api/search')
+def search_stations():
+    """Server-side station search endpoint across Radio-Browser API cluster."""
+    query = request.args.get('q', '').strip()
+    if not query:
+        return jsonify([])
+
+    search_url = f"https://de1.api.radio-browser.info/json/stations/byname/{urllib.parse.quote(query)}?limit=40"
+    try:
+        req = urllib.request.Request(search_url, headers={'User-Agent': 'RadioPulseQuantumNexus/2.0'})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            if response.status == 200:
+                data = json.loads(response.read().decode('utf-8'))
+                return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/proxy')
 def proxy_audio():
